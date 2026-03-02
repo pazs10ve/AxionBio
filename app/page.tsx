@@ -9,11 +9,15 @@ import { Testimonials } from '@/components/landing/Testimonials';
 import { PricingTeaser } from '@/components/landing/PricingTeaser';
 import { CTABanner } from '@/components/landing/CTABanner';
 import { Footer } from '@/components/landing/Footer';
+import { auth0 } from '@/lib/auth0';
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const session = await auth0.getSession();
+  const user = session?.user;
+
   return (
     <main>
-      <LandingNav />
+      <LandingNav user={user} />
       <HeroSection />
       <TrustedBy />
       <ProblemSolution />

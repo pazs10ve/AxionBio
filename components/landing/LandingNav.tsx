@@ -31,7 +31,7 @@ const NAV_LINKS = [
     { label: 'Company', href: '#company' },
 ];
 
-export function LandingNav() {
+export function LandingNav({ user }: { user?: any }) {
     const [scrolled, setScrolled] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -160,26 +160,47 @@ export function LandingNav() {
 
                     {/* Desktop CTA buttons */}
                     <div className="hidden lg:flex items-center gap-3">
-                        <Link
-                            href="/sign-in"
-                            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-2 rounded-md hover:bg-slate-100/70"
-                        >
-                            Sign In
-                        </Link>
-                        <Link
-                            href="/sign-up"
-                            id="nav-signup"
-                            className="inline-flex items-center justify-center rounded-lg border border-brand px-4 py-2 text-sm font-semibold text-brand hover:bg-brand-light transition-colors"
-                        >
-                            Get Started
-                        </Link>
-                        <Link
-                            href="#demo"
-                            id="nav-demo"
-                            className="inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-hover transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
-                        >
-                            Request a Demo
-                        </Link>
+                        {user ? (
+                            <>
+                                <Link
+                                    href="/api/auth/logout"
+                                    className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-2 rounded-md hover:bg-slate-100/70"
+                                >
+                                    Sign Out
+                                </Link>
+                                <Link
+                                    href="/dashboard"
+                                    className="inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-hover transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                                >
+                                    Dashboard
+                                </Link>
+                            </>
+                        ) : (
+                            <>
+                                <Link
+                                    href="/api/auth/login?returnTo=/dashboard"
+                                    className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-2 rounded-md hover:bg-slate-100/70"
+                                >
+                                    Sign In
+                                </Link>
+                                <Link
+                                    href="/api/auth/login?screen_hint=signup&returnTo=/dashboard"
+                                    id="nav-signup"
+                                    className="inline-flex items-center justify-center rounded-lg border border-brand px-4 py-2 text-sm font-semibold text-brand hover:bg-brand-light transition-colors"
+                                >
+                                    Get Started
+                                </Link>
+                            </>
+                        )}
+                        {!user && (
+                            <Link
+                                href="#demo"
+                                id="nav-demo"
+                                className="inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-hover transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                            >
+                                Request a Demo
+                            </Link>
+                        )}
                     </div>
 
                     {/* Mobile hamburger */}
@@ -298,27 +319,50 @@ export function LandingNav() {
 
                     {/* Drawer CTAs */}
                     <div className="border-t border-slate-200 px-4 py-4 space-y-3">
-                        <Link
-                            href="/sign-in"
-                            className="block w-full rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                            onClick={() => setMobileOpen(false)}
-                        >
-                            Sign In
-                        </Link>
-                        <Link
-                            href="/sign-up"
-                            className="block w-full rounded-lg border border-brand px-4 py-2.5 text-center text-sm font-semibold text-brand hover:bg-brand-light transition-colors"
-                            onClick={() => setMobileOpen(false)}
-                        >
-                            Get Started
-                        </Link>
-                        <Link
-                            href="#demo"
-                            className="block w-full rounded-lg bg-brand px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-brand-hover transition-colors"
-                            onClick={() => setMobileOpen(false)}
-                        >
-                            Request a Demo
-                        </Link>
+                        {user ? (
+                            <>
+                                <Link
+                                    href="/dashboard"
+                                    className="block w-full rounded-lg bg-brand px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-brand-hover transition-colors"
+                                    onClick={() => setMobileOpen(false)}
+                                >
+                                    Dashboard
+                                </Link>
+                                <Link
+                                    href="/api/auth/logout"
+                                    className="block w-full rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                                    onClick={() => setMobileOpen(false)}
+                                >
+                                    Sign Out
+                                </Link>
+                            </>
+                        ) : (
+                            <>
+                                <Link
+                                    href="/api/auth/login?returnTo=/dashboard"
+                                    className="block w-full rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                                    onClick={() => setMobileOpen(false)}
+                                >
+                                    Sign In
+                                </Link>
+                                <Link
+                                    href="/api/auth/login?screen_hint=signup&returnTo=/dashboard"
+                                    className="block w-full rounded-lg border border-brand px-4 py-2.5 text-center text-sm font-semibold text-brand hover:bg-brand-light transition-colors"
+                                    onClick={() => setMobileOpen(false)}
+                                >
+                                    Get Started
+                                </Link>
+                            </>
+                        )}
+                        {!user && (
+                            <Link
+                                href="#demo"
+                                className="block w-full rounded-lg bg-brand px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-brand-hover transition-colors"
+                                onClick={() => setMobileOpen(false)}
+                            >
+                                Request a Demo
+                            </Link>
+                        )}
                     </div>
                 </div>
             </>
