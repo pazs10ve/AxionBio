@@ -386,3 +386,123 @@ export const MOCK_MOLECULES = [
     },
 ];
 
+// ── Projects ───────────────────────────────────────────────────────────────────
+
+export type ProjectStatus = 'active' | 'paused' | 'completed' | 'archived';
+export type ProjectPhase = 'Discovery' | 'Hit ID' | 'Lead Opt' | 'Preclinical';
+export type ProjectModality = 'Protein Binder' | 'Nanobody' | 'PROTAC' | 'CRISPR' | 'Small Molecule' | 'Oligonucleotide';
+
+export type MockProject = {
+    id: string;
+    name: string;
+    description: string;
+    status: ProjectStatus;
+    program: string;
+    indication: string;
+    target: string;
+    modality: ProjectModality;
+    phase: ProjectPhase;
+    moleculeIds: string[];
+    memberCount: number;
+    jobCount: number;
+    lastActivity: string;
+    createdAt: string;
+    tags: string[];
+    color: string;
+    jobHistory: { id: string; type: string; model: string; status: string; date: string; molecules: number }[];
+    labOrders: { id: string; molecule: string; provider: string; qty: number; status: string; date: string }[];
+};
+
+export const MOCK_PROJECTS: MockProject[] = [
+    {
+        id: 'proj-1',
+        name: 'ABL1 Binder Campaign',
+        status: 'active',
+        description: 'De novo protein binder design targeting ABL1 kinase for CML therapy. Running RFdiffusion + ProteinMPNN pipeline.',
+        program: 'Oncology',
+        indication: 'Chronic Myeloid Leukemia (CML)',
+        target: 'ABL1',
+        modality: 'Protein Binder',
+        phase: 'Lead Opt',
+        moleculeIds: ['mol-1', 'mol-2', 'mol-8'],
+        memberCount: 3, jobCount: 12,
+        lastActivity: '2 hours ago', createdAt: '2026-02-10',
+        tags: ['protein-binder', 'kinase', 'rfdiffusion'],
+        color: 'bg-brand',
+        jobHistory: [
+            { id: 'job-1', type: 'Structure Prediction', model: 'AlphaFold3', status: 'completed', date: '2026-03-04', molecules: 5 },
+            { id: 'job-2', type: 'Sequence Design', model: 'RFdiffusion', status: 'completed', date: '2026-03-03', molecules: 12 },
+            { id: 'job-3', type: 'MD Simulation', model: 'GROMACS', status: 'running', date: '2026-03-05', molecules: 3 },
+        ],
+        labOrders: [
+            { id: 'ord-1', molecule: 'ABL1-Binder-Rank1', provider: 'Twist Bioscience', qty: 1, status: 'In synthesis', date: '2026-03-01' },
+            { id: 'ord-2', molecule: 'ABL1-Binder-Rank2', provider: 'IDT', qty: 1, status: 'Ordered', date: '2026-03-03' },
+        ],
+    },
+    {
+        id: 'proj-2',
+        name: 'CompactCas9 Engineering',
+        status: 'active',
+        description: 'Engineering smaller Cas9 variants for AAV packaging. Uses ESM-3 for variant scoring and structure prediction.',
+        program: 'Gene Therapy',
+        indication: 'Duchenne Muscular Dystrophy (DMD)',
+        target: 'Cas9',
+        modality: 'CRISPR',
+        phase: 'Hit ID',
+        moleculeIds: ['mol-3'],
+        memberCount: 2, jobCount: 6,
+        lastActivity: '1 day ago', createdAt: '2026-02-20',
+        tags: ['crispr', 'esm3', 'gene-therapy'],
+        color: 'bg-cyan-500',
+        jobHistory: [
+            { id: 'job-4', type: 'CRISPR Design', model: 'ESM-3', status: 'completed', date: '2026-03-02', molecules: 8 },
+            { id: 'job-5', type: 'Developability', model: 'GROMACS', status: 'completed', date: '2026-03-01', molecules: 4 },
+        ],
+        labOrders: [],
+    },
+    {
+        id: 'proj-3',
+        name: 'EGFR PROTAC Library',
+        status: 'paused',
+        description: 'PROTAC linker design for EGFR targeted degradation. Awaiting synthesis results from Twist Bioscience.',
+        program: 'Oncology',
+        indication: 'Non-Small Cell Lung Cancer (NSCLC)',
+        target: 'EGFR',
+        modality: 'PROTAC',
+        phase: 'Discovery',
+        moleculeIds: ['mol-4', 'mol-5'],
+        memberCount: 2, jobCount: 4,
+        lastActivity: '3 days ago', createdAt: '2026-01-28',
+        tags: ['protac', 'degrader', 'egfr'],
+        color: 'bg-violet-500',
+        jobHistory: [
+            { id: 'job-6', type: 'PROTAC Design', model: 'RFdiffusion', status: 'completed', date: '2026-02-25', molecules: 15 },
+        ],
+        labOrders: [
+            { id: 'ord-3', molecule: 'EGFR-PROTAC-003', provider: 'Emerald Cloud Lab', qty: 2, status: 'Delivered', date: '2026-02-28' },
+        ],
+    },
+    {
+        id: 'proj-4',
+        name: 'IL-6 Nanobody Screen',
+        status: 'completed',
+        description: 'AlphaFold3-guided nanobody affinity maturation against IL-6. Hit compounds progressed to SPR validation.',
+        program: 'Immunology',
+        indication: 'Rheumatoid Arthritis',
+        target: 'IL-6',
+        modality: 'Nanobody',
+        phase: 'Preclinical',
+        moleculeIds: ['mol-6', 'mol-7'],
+        memberCount: 4, jobCount: 28,
+        lastActivity: '2 weeks ago', createdAt: '2025-12-01',
+        tags: ['nanobody', 'immunology', 'alphafold3'],
+        color: 'bg-success',
+        jobHistory: [
+            { id: 'job-7', type: 'Structure Prediction', model: 'AlphaFold3', status: 'completed', date: '2026-01-10', molecules: 42 },
+            { id: 'job-8', type: 'MD Simulation', model: 'GROMACS', status: 'completed', date: '2026-01-20', molecules: 10 },
+        ],
+        labOrders: [
+            { id: 'ord-4', molecule: 'KRAS-VHH-001', provider: 'Twist Bioscience', qty: 3, status: 'Assay complete', date: '2026-02-01' },
+        ],
+    },
+];

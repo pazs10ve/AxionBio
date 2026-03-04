@@ -1,12 +1,13 @@
 'use client';
 
 import { useUser } from '@auth0/nextjs-auth0';
-import { Bell, Search, Cpu, Database, Bot, FlaskConical, BookMarked, Home, Settings, ActivitySquare, User, LogOut, FolderSearch } from 'lucide-react';
+import { Bell, Search, Cpu, Database, Bot, FlaskConical, BookMarked, Home, Settings, ActivitySquare, User, LogOut, FolderSearch, ChevronDown, Circle } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import { useProject } from '@/lib/project-context';
 
 // ── Breadcrumb route map ────────────────────────────────────────────────────────
 
@@ -22,6 +23,107 @@ const ROUTE_LABELS: Record<string, string> = {
     projects: 'Projects',
     profile: 'Profile',
 };
+
+// ── Project Switcher ───────────────────────────────────────────────────────────
+
+function ProjectSwitcher() {
+    const { activeProject, projects, setActiveProject } = useProject();
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const activeProjects = projects.filter(p => p.status === 'active');
+    const otherProjects = projects.filter(p => p.status !== 'active');
+
+    return (
+        <div ref={ref} className="relative">
+            <button
+                onClick={() => setOpen(v => !v)}
+                className={cn(
+                    'flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all',
+                    activeProject
+                        ? 'bg-brand/5 border-brand/20 text-brand hover:bg-brand/10'
+                        : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'
+                )}
+            >
+                <span className={cn('w-2 h-2 rounded-full shrink-0', activeProject ? 'bg-brand animate-pulse' : 'bg-slate-300')} />
+                <span className="max-w-[140px] truncate">{activeProject?.name ?? 'No project'}</span>
+                <ChevronDown className="w-3 h-3 shrink-0" />
+            </button>
+
+            {open && (
+                <div className="absolute left-0 top-9 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-slate-100">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Project</p>
+                    </div>
+                    <div className="py-1 max-h-64 overflow-y-auto">
+                        {/* No project option */}
+                        <button
+                            onClick={() => { setActiveProject(null); setOpen(false); }}
+                            className={cn(
+                                'flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors hover:bg-slate-50',
+                                !activeProject ? 'text-brand' : 'text-slate-600'
+                            )}
+                        >
+                            <Circle className="w-3.5 h-3.5 text-slate-300" />
+                            <span className="text-sm font-medium">No project</span>
+                        </button>
+
+                        {activeProjects.length > 0 && (
+                            <>
+                                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-wider px-4 pt-2 pb-1">Active</p>
+                                {activeProjects.map(p => (
+                                    <button key={p.id}
+                                        onClick={() => { setActiveProject(p); setOpen(false); }}
+                                        className={cn(
+                                            'flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors hover:bg-slate-50',
+                                            activeProject?.id === p.id ? 'text-brand bg-brand/5' : 'text-slate-600'
+                                        )}
+                                    >
+                                        <span className={cn('w-2 h-2 rounded-full shrink-0', p.color.replace('bg-', 'bg-'))} />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold truncate">{p.name}</p>
+                                            <p className="text-[10px] text-slate-400 truncate">{p.target} · {p.indication}</p>
+                                        </div>
+                                        {activeProject?.id === p.id && <span className="text-[9px] font-bold text-brand">Active</span>}
+                                    </button>
+                                ))}
+                            </>
+                        )}
+
+                        {otherProjects.length > 0 && (
+                            <>
+                                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-wider px-4 pt-2 pb-1">Other</p>
+                                {otherProjects.map(p => (
+                                    <button key={p.id}
+                                        onClick={() => { setActiveProject(p); setOpen(false); }}
+                                        className="flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors hover:bg-slate-50 text-slate-400"
+                                    >
+                                        <span className="w-2 h-2 rounded-full bg-slate-300 shrink-0" />
+                                        <p className="text-sm font-medium truncate">{p.name}</p>
+                                    </button>
+                                ))}
+                            </>
+                        )}
+                    </div>
+                    <div className="border-t border-slate-100 p-2">
+                        <Link href="/dashboard/projects" onClick={() => setOpen(false)}
+                            className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/5 rounded-xl transition-colors">
+                            <FolderSearch className="w-3.5 h-3.5" /> Manage projects
+                        </Link>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
 
 // ── Command Palette ────────────────────────────────────────────────────────────
 
@@ -211,19 +313,23 @@ export function TopBar() {
             <header className="h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-10">
 
                 {/* Breadcrumb */}
-                <nav className="flex items-center text-sm font-medium text-slate-500">
-                    {breadcrumbs.map((crumb, idx) => (
-                        <div key={`${crumb}-${idx}`} className="flex items-center">
-                            {idx > 0 && <span className="mx-2 text-slate-300">/</span>}
-                            <span className={cn(
-                                'transition-colors',
-                                idx === breadcrumbs.length - 1 ? 'text-slate-900 font-semibold' : 'hover:text-slate-700'
-                            )}>
-                                {crumb}
-                            </span>
-                        </div>
-                    ))}
-                </nav>
+                <div className="flex items-center gap-3">
+                    <nav className="flex items-center text-sm font-medium text-slate-500">
+                        {breadcrumbs.map((crumb, idx) => (
+                            <div key={`${crumb}-${idx}`} className="flex items-center">
+                                {idx > 0 && <span className="mx-2 text-slate-300">/</span>}
+                                <span className={cn(
+                                    'transition-colors',
+                                    idx === breadcrumbs.length - 1 ? 'text-slate-900 font-semibold' : 'hover:text-slate-700'
+                                )}>
+                                    {crumb}
+                                </span>
+                            </div>
+                        ))}
+                    </nav>
+                    <div className="h-4 w-px bg-slate-200" />
+                    <ProjectSwitcher />
+                </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-3">
