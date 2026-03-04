@@ -1,8 +1,9 @@
 'use client';
 
 import { useUser } from '@auth0/nextjs-auth0';
-import { Bell, Search, Cpu, Database, Bot, FlaskConical, BookMarked, Home, Settings, ActivitySquare } from 'lucide-react';
+import { Bell, Search, Cpu, Database, Bot, FlaskConical, BookMarked, Home, Settings, ActivitySquare, User, LogOut, FolderSearch } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
@@ -19,6 +20,7 @@ const ROUTE_LABELS: Record<string, string> = {
     settings: 'Settings',
     molecules: 'Molecules Library',
     projects: 'Projects',
+    profile: 'Profile',
 };
 
 // ── Command Palette ────────────────────────────────────────────────────────────
@@ -32,8 +34,10 @@ const COMMANDS: Command[] = [
     { label: 'Simulation Console', path: '/dashboard/simulation', icon: ActivitySquare, group: 'Navigate' },
     { label: 'Data Lake', path: '/dashboard/data', icon: Database, group: 'Navigate' },
     { label: 'Molecules Library', path: '/dashboard/molecules', icon: BookMarked, group: 'Navigate' },
+    { label: 'Projects', path: '/dashboard/projects', icon: FolderSearch, group: 'Navigate' },
     { label: 'Lab Bridge', path: '/dashboard/lab', icon: FlaskConical, group: 'Navigate' },
     { label: 'Settings', path: '/dashboard/settings', icon: Settings, group: 'Navigate' },
+    { label: 'My Profile', path: '/dashboard/profile', icon: User, group: 'Account' },
 ];
 
 function CommandPalette({ onClose }: { onClose: () => void }) {
@@ -119,6 +123,64 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     );
 }
 
+// ── Avatar Dropdown ────────────────────────────────────────────────────────────
+
+function AvatarDropdown({ user, isLoading }: { user: ReturnType<typeof useUser>['user']; isLoading: boolean }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    return (
+        <div ref={ref} className="relative">
+            <button
+                onClick={() => setOpen(v => !v)}
+                className="focus:outline-none focus:ring-2 focus:ring-brand rounded-full"
+            >
+                <Avatar className="w-9 h-9 border border-slate-200">
+                    <AvatarImage src={user?.picture ?? ''} alt={user?.name ?? 'User'} />
+                    <AvatarFallback className="bg-slate-100 text-slate-600 font-medium text-sm">
+                        {isLoading ? '…' : (user?.name?.[0] ?? 'U')}
+                    </AvatarFallback>
+                </Avatar>
+            </button>
+
+            {open && (
+                <div className="absolute right-0 top-11 w-60 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+                    {/* User info */}
+                    <div className="px-4 py-3 border-b border-slate-100">
+                        <p className="text-sm font-semibold text-slate-900 truncate">{user?.name ?? 'User'}</p>
+                        <p className="text-xs text-slate-400 truncate mt-0.5">{user?.email}</p>
+                    </div>
+                    {/* Links */}
+                    <div className="py-1">
+                        <Link href="/dashboard/profile" onClick={() => setOpen(false)}
+                            className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                            <User className="w-4 h-4 text-slate-400" /> View Profile
+                        </Link>
+                        <Link href="/dashboard/settings" onClick={() => setOpen(false)}
+                            className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                            <Settings className="w-4 h-4 text-slate-400" /> Settings
+                        </Link>
+                    </div>
+                    <div className="border-t border-slate-100 py-1">
+                        <a href="/auth/logout"
+                            className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-error hover:bg-error/5 transition-colors">
+                            <LogOut className="w-4 h-4" /> Sign out
+                        </a>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── TopBar ────────────────────────────────────────────────────────────────────
 
 export function TopBar() {
@@ -192,15 +254,8 @@ export function TopBar() {
                         <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white" />
                     </button>
 
-                    {/* User avatar */}
-                    <button className="focus:outline-none focus:ring-2 focus:ring-brand rounded-full">
-                        <Avatar className="w-9 h-9 border border-slate-200">
-                            <AvatarImage src={user?.picture ?? ''} alt={user?.name ?? 'User'} />
-                            <AvatarFallback className="bg-slate-100 text-slate-600 font-medium text-sm">
-                                {isLoading ? '…' : (user?.name?.[0] ?? 'U')}
-                            </AvatarFallback>
-                        </Avatar>
-                    </button>
+                    {/* User avatar dropdown */}
+                    <AvatarDropdown user={user} isLoading={isLoading} />
                 </div>
             </header>
         </>

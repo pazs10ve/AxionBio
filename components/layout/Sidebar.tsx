@@ -5,8 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
     Dna, Home, Database, FolderSearch, Cpu, FlaskConical,
     Bot, ChevronsLeft, Settings, BookMarked, ChevronRight,
-    ActivitySquare, Layers, Scissors, Syringe, Microscope,
-    TestTube2,
+    ActivitySquare, User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
@@ -186,8 +185,8 @@ export function Sidebar() {
                 ))}
             </div>
 
-            {/* Settings */}
-            <div className="p-3 border-t border-slate-200">
+            {/* Settings + Profile */}
+            <div className="p-3 border-t border-slate-200 space-y-0.5">
                 <Link
                     href="/dashboard/settings"
                     className={cn(
@@ -200,6 +199,19 @@ export function Sidebar() {
                 >
                     <Settings className={cn('shrink-0 w-5 h-5', pathname.startsWith('/dashboard/settings') ? 'text-brand' : 'text-slate-500 group-hover:text-slate-700')} />
                     {!isCollapsed && <span>Settings</span>}
+                </Link>
+                <Link
+                    href="/dashboard/profile"
+                    className={cn(
+                        'flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition-colors group',
+                        pathname.startsWith('/dashboard/profile')
+                            ? 'bg-brand/10 text-brand'
+                            : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900'
+                    )}
+                    title={isCollapsed ? 'Profile' : undefined}
+                >
+                    <User className={cn('shrink-0 w-5 h-5', pathname.startsWith('/dashboard/profile') ? 'text-brand' : 'text-slate-500 group-hover:text-slate-700')} />
+                    {!isCollapsed && <span>Profile</span>}
                 </Link>
             </div>
         </aside>
