@@ -9,7 +9,7 @@ export default async function DashboardLayout({
     const session = await auth0.getSession();
 
     if (!session) {
-        redirect('/api/auth/login?returnTo=/dashboard');
+        redirect('/auth/login?returnTo=/dashboard');
     }
 
     if (!session.user.email_verified) {
