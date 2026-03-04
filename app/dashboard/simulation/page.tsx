@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { generateMockRMSDData, MOCK_MD_RESULT } from '@/lib/mock-data';
+import { generateMockRMSDData, MOCK_MD_RESULT, MOCK_MOLECULES } from '@/lib/mock-data';
 import { useJobPoller } from '@/lib/use-job-poller';
 import { cn } from '@/lib/utils';
 import {
@@ -9,10 +9,190 @@ import {
     ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts';
 import {
-    FlaskConical, Play, Download, ArrowRight, CheckCircle2,
+    FlaskConical, Play, Download, CheckCircle2,
     Loader2, Cpu, Thermometer, Waves, Layers, X, Sparkles,
+    Plus, Upload, BookMarked, Check, Trash2, Zap, BarChart2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+
+type SimMode = 'md' | 'fep' | 'developability';
+
+const SIM_MODES: { id: SimMode; label: string; description: string; icon: React.FC<{ className?: string }> }[] = [
+    { id: 'md', label: 'MD Console', description: 'GROMACS molecular dynamics — RMSD, RMSF, trajectory analysis', icon: Waves },
+    { id: 'fep', label: 'FEP / Binding', description: 'Free energy perturbation — absolute and relative ΔΔG', icon: Zap },
+    { id: 'developability', label: 'Developability', description: 'Aggregation propensity, immunogenicity, solubility scoring', icon: BarChart2 },
+];
+
+// ── Molecule Picker Modal ─────────────────────────────────────────────────────
+
+type MolEntry = { id: string; name: string; source: 'library' | 'upload'; target?: string };
+
+function MoleculePickerModal({
+    existing,
+    onAdd,
+    onClose,
+}: {
+    existing: MolEntry[];
+    onAdd: (mols: MolEntry[]) => void;
+    onClose: () => void;
+}) {
+    const [tab, setTab] = useState<'library' | 'upload'>('library');
+    const [selected, setSelected] = useState<Set<string>>(new Set(existing.map(e => e.id)));
+    const [dragOver, setDragOver] = useState(false);
+    const [uploaded, setUploaded] = useState<MolEntry[]>([]);
+    const fileRef = useRef<HTMLInputElement>(null);
+
+    const toggleLib = (id: string) => {
+        setSelected(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const handleFiles = (files: FileList | null) => {
+        if (!files) return;
+        const newEntries: MolEntry[] = [];
+        Array.from(files).forEach(f => {
+            const id = `upload-${f.name}-${Date.now()}`;
+            newEntries.push({ id, name: f.name.replace(/\.(fasta|pdb|cif)$/i, ''), source: 'upload' });
+        });
+        setUploaded(prev => [...prev, ...newEntries]);
+    };
+
+    const removeUploaded = (id: string) => setUploaded(prev => prev.filter(u => u.id !== id));
+
+    const apply = () => {
+        const libraryMols = MOCK_MOLECULES
+            .filter(m => selected.has(m.id))
+            .map(m => ({ id: m.id, name: m.name, source: 'library' as const, target: m.target }));
+        onAdd([...libraryMols, ...uploaded]);
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+            <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[80vh]"
+                onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+                    <h2 className="text-base font-semibold text-slate-900">Manage Molecules</h2>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex border-b border-slate-100 px-5 shrink-0">
+                    {(['library', 'upload'] as const).map(t => (
+                        <button key={t} onClick={() => setTab(t)}
+                            className={cn(
+                                'flex items-center gap-2 px-3 py-3 text-sm font-semibold border-b-2 transition-colors mr-2',
+                                tab === t ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700'
+                            )}>
+                            {t === 'library' ? <><BookMarked className="w-3.5 h-3.5" /> From Library</> : <><Upload className="w-3.5 h-3.5" /> Upload File</>}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto p-5">
+                    {tab === 'library' ? (
+                        <div className="space-y-1.5">
+                            <p className="text-xs text-slate-400 mb-3">
+                                Select molecules from your workspace library. <strong className="text-slate-600">{selected.size}</strong> selected.
+                            </p>
+                            {MOCK_MOLECULES.map(m => {
+                                const isSelected = selected.has(m.id);
+                                return (
+                                    <button key={m.id} onClick={() => toggleLib(m.id)}
+                                        className={cn(
+                                            'w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left',
+                                            isSelected
+                                                ? 'border-brand/30 bg-brand/5'
+                                                : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                                        )}>
+                                        <div className={cn(
+                                            'w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all',
+                                            isSelected ? 'bg-brand border-brand' : 'border-slate-300'
+                                        )}>
+                                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-slate-800">{m.name}</p>
+                                            <p className="text-xs text-slate-400 truncate">{m.target} · {m.modality.replace('_', ' ')}</p>
+                                        </div>
+                                        <div className="shrink-0 text-right">
+                                            <span className="text-[10px] font-mono font-bold text-success">{m.pLDDT}</span>
+                                            <p className="text-[9px] text-slate-400">pLDDT</p>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {/* Drop zone */}
+                            <div
+                                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                                onDragLeave={() => setDragOver(false)}
+                                onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+                                onClick={() => fileRef.current?.click()}
+                                className={cn(
+                                    'border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all',
+                                    dragOver ? 'border-brand bg-brand/5' : 'border-slate-200 hover:border-slate-300 bg-slate-50'
+                                )}>
+                                <Upload className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                                <p className="text-sm font-semibold text-slate-600">Drop files here or click to browse</p>
+                                <p className="text-xs text-slate-400 mt-1">Supports <span className="font-mono">.fasta</span>, <span className="font-mono">.pdb</span>, <span className="font-mono">.cif</span></p>
+                                <input
+                                    ref={fileRef}
+                                    type="file"
+                                    multiple
+                                    accept=".fasta,.pdb,.cif,.fa"
+                                    className="hidden"
+                                    onChange={e => handleFiles(e.target.files)}
+                                />
+                            </div>
+
+                            {/* Uploaded list */}
+                            {uploaded.length > 0 && (
+                                <div className="space-y-2">
+                                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Uploaded files</p>
+                                    {uploaded.map(u => (
+                                        <div key={u.id} className="flex items-center gap-3 p-3 bg-success/5 border border-success/20 rounded-xl">
+                                            <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+                                            <span className="text-sm font-medium text-slate-700 flex-1 truncate">{u.name}</span>
+                                            <button onClick={() => removeUploaded(u.id)}
+                                                className="text-slate-300 hover:text-error transition-colors shrink-0">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-5 py-4 border-t border-slate-100 flex gap-3 items-center shrink-0">
+                    <p className="text-xs text-slate-400 flex-1">
+                        {tab === 'library' ? `${selected.size} molecule${selected.size !== 1 ? 's' : ''} selected` : `${uploaded.length} file${uploaded.length !== 1 ? 's' : ''} ready`}
+                    </p>
+                    <Button variant="outline" size="sm" onClick={onClose} className="border-slate-200 text-xs">Cancel</Button>
+                    <Button
+                        onClick={apply}
+                        disabled={selected.size === 0 && uploaded.length === 0}
+                        className="bg-brand hover:bg-brand-hover text-white text-xs h-9 gap-2">
+                        <Check className="w-3.5 h-3.5" /> Apply
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 // ── Config Form ────────────────────────────────────────────────────────────────
 
@@ -25,30 +205,85 @@ const SIM_PRESETS = [
     { label: '500ns', ns: 500, gpu: 62 },
 ];
 
-function MDConfigForm({ onSubmit }: { onSubmit: () => void }) {
-    const [receptor, setReceptor] = useState('ABL1-Binder-Rank1');
+function MDConfigForm({
+    molecules,
+    onOpenPicker,
+    onRemoveMolecule,
+    onSubmit,
+}: {
+    molecules: MolEntry[];
+    onOpenPicker: () => void;
+    onRemoveMolecule: (id: string) => void;
+    onSubmit: () => void;
+}) {
+    const [receptor, setReceptor] = useState(molecules[0]?.id ?? '');
     const [forceField, setForceField] = useState(FORCE_FIELDS[0]);
     const [water, setWater] = useState(WATER_MODELS[0]);
     const [ns, setNs] = useState(50);
     const [temp, setTemp] = useState(310);
     const selectedPreset = SIM_PRESETS.find(p => p.ns === ns);
 
+    // Sync receptor when molecule list changes
+    useEffect(() => {
+        if (molecules.length > 0 && !molecules.find(m => m.id === receptor)) {
+            setReceptor(molecules[0].id);
+        }
+    }, [molecules, receptor]);
+
     return (
         <div className="space-y-5">
-            {/* Receptor */}
+            {/* Receptor / Molecule with manager UI */}
             <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                    Receptor / Molecule
-                </label>
-                <select
-                    value={receptor}
-                    onChange={e => setReceptor(e.target.value)}
-                    className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand text-slate-700"
-                >
-                    {['ABL1-Binder-Rank1', 'ABL1-Binder-Rank2', 'CompactCas-Variant-7'].map(r => (
-                        <option key={r}>{r}</option>
-                    ))}
-                </select>
+                <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Receptor / Molecule
+                    </label>
+                    <button onClick={onOpenPicker}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-brand hover:text-brand-hover transition-colors">
+                        <Plus className="w-3.5 h-3.5" /> Manage
+                    </button>
+                </div>
+
+                {molecules.length === 0 ? (
+                    <button onClick={onOpenPicker}
+                        className="w-full h-10 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center gap-2 text-xs text-slate-400 hover:border-brand/30 hover:text-brand transition-colors">
+                        <Plus className="w-3.5 h-3.5" /> Add a molecule to simulate
+                    </button>
+                ) : (
+                    <div className="space-y-1.5">
+                        {molecules.map(m => (
+                            <div key={m.id}
+                                onClick={() => setReceptor(m.id)}
+                                className={cn(
+                                    'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all group',
+                                    receptor === m.id
+                                        ? 'border-brand/30 bg-brand/5'
+                                        : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                                )}>
+                                <div className={cn(
+                                    'w-3.5 h-3.5 rounded-full border-2 shrink-0 transition-all',
+                                    receptor === m.id ? 'border-brand bg-brand' : 'border-slate-300'
+                                )} />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-slate-800 truncate">{m.name}</p>
+                                    {m.target && <p className="text-[10px] text-slate-400 leading-none mt-0.5">{m.target}</p>}
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    {m.source === 'upload' && (
+                                        <span className="text-[9px] font-semibold px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-200 rounded">
+                                            uploaded
+                                        </span>
+                                    )}
+                                    <button
+                                        onClick={e => { e.stopPropagation(); onRemoveMolecule(m.id); }}
+                                        className="text-slate-200 hover:text-error transition-colors opacity-0 group-hover:opacity-100">
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Simulation length presets */}
@@ -254,14 +489,28 @@ function ResultsSummary() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SimulationPage() {
+    const [mode, setMode] = useState<SimMode>('md');
     const [allData] = useState(() => generateMockRMSDData(100));
     const [liveData, setLiveData] = useState<ReturnType<typeof generateMockRMSDData>>([]);
     const liveIndexRef = useRef(0);
 
+    // Molecule management
+    const [molecules, setMolecules] = useState<MolEntry[]>([]);
+    const [pickerOpen, setPickerOpen] = useState(false);
+
+    const handleAddMolecules = (mols: MolEntry[]) => setMolecules(mols);
+    const handleRemoveMolecule = (id: string) => setMolecules(prev => prev.filter(m => m.id !== id));
+
     const { step, progress, logLines, start, reset, isDone, isRunning } = useJobPoller(() => {
-        // Show all data when complete
         setLiveData(allData);
     });
+
+    const handleModeChange = (m: SimMode) => {
+        setMode(m);
+        reset();
+        setLiveData([]);
+        liveIndexRef.current = 0;
+    };
 
     // Stream data points into the chart as the job "runs"
     useEffect(() => {
@@ -298,7 +547,7 @@ export default function SimulationPage() {
                     </div>
                     <div>
                         <h1 className="text-base font-semibold text-slate-900">Simulation Console</h1>
-                        <p className="text-xs text-slate-500">MD · FEP · Developability</p>
+                        <p className="text-xs text-slate-500">{SIM_MODES.find(m => m.id === mode)?.description}</p>
                     </div>
                 </div>
                 {isDone && (
@@ -311,6 +560,28 @@ export default function SimulationPage() {
                         <Loader2 className="w-3.5 h-3.5 animate-spin" /> Running · {Math.round(progress)}%
                     </div>
                 )}
+            </div>
+
+            {/* Mode switcher tab bar */}
+            <div className="bg-white border-b border-slate-200 px-6 shrink-0">
+                <div className="flex gap-1">
+                    {SIM_MODES.map((m) => {
+                        const Icon = m.icon;
+                        return (
+                            <button key={m.id} onClick={() => handleModeChange(m.id)}
+                                className={cn(
+                                    'flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap',
+                                    mode === m.id
+                                        ? 'border-brand text-brand'
+                                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                                )}
+                            >
+                                <Icon className="w-4 h-4" />
+                                {m.label}
+                            </button>
+                        );
+                    })}
+                </div>
             </div>
 
             {/* 2×2 quadrant body */}
@@ -350,9 +621,23 @@ export default function SimulationPage() {
                             )}
                         </div>
                     ) : (
-                        <MDConfigForm onSubmit={handleStart} />
+                        <MDConfigForm
+                            molecules={molecules}
+                            onOpenPicker={() => setPickerOpen(true)}
+                            onRemoveMolecule={handleRemoveMolecule}
+                            onSubmit={handleStart}
+                        />
                     )}
                 </div>
+
+                {/* Molecule Picker Modal */}
+                {pickerOpen && (
+                    <MoleculePickerModal
+                        existing={molecules}
+                        onAdd={handleAddMolecules}
+                        onClose={() => setPickerOpen(false)}
+                    />
+                )}
 
                 {/* Q2: RMSD Chart */}
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col overflow-hidden">

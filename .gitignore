@@ -39,10 +39,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-dev  
+dev
 
 .vscode
-.gitignore
 
 build_logs.txt
 build_output.txt

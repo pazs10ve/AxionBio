@@ -8,6 +8,7 @@ import {
     Dna, FlaskConical, Cpu, ChevronRight, ChevronDown, ChevronLeft,
     Upload, Search, Play, X, CheckCircle2, AlertCircle, Clock, Loader2,
     Download, ArrowRight, Star, StarOff, Beaker, Sparkles,
+    Layers, Scissors, Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +16,14 @@ import { Badge } from '@/components/ui/badge';
 type ModelId = typeof MODELS[number]['id'];
 type SortKey = 'rank' | 'pLDDT' | 'pTM' | 'bindingAffinity';
 type SortDir = 'asc' | 'desc';
+type GenMode = 'structure' | 'sequence' | 'protac' | 'crispr';
+
+const GEN_MODES: { id: GenMode; label: string; description: string; icon: React.FC<{ className?: string }> }[] = [
+    { id: 'structure', label: 'Structure Prediction', description: 'AlphaFold3, ESMFold — fold a sequence into 3D structure', icon: Layers },
+    { id: 'sequence', label: 'Sequence Design', description: 'RFdiffusion, ProteinMPNN — design binders de novo', icon: Dna },
+    { id: 'protac', label: 'PROTAC Designer', description: 'Generate ternary complex binders for targeted degradation', icon: Scissors },
+    { id: 'crispr', label: 'CRISPR Designer', description: 'Compact Cas9/Cas12 variant design and guide optimization', icon: Wrench },
+];
 
 // ── Molstar Placeholder (lazy-loaded in production via dynamic import) ────────
 
@@ -66,10 +75,15 @@ function MolstarViewerPlaceholder({ pdbId }: { pdbId: string | null }) {
 
 // ── Model Selector ────────────────────────────────────────────────────────────
 
-function ModelSelector({ selected, onChange }: { selected: ModelId; onChange: (id: ModelId) => void }) {
+function ModelSelector({ selected, onChange, filter }: {
+    selected: ModelId;
+    onChange: (id: ModelId) => void;
+    filter?: ModelId[];
+}) {
+    const visibleModels = filter ? MODELS.filter(m => filter.includes(m.id)) : MODELS;
     return (
         <div className="space-y-2">
-            {MODELS.map((m) => (
+            {visibleModels.map((m) => (
                 <button
                     key={m.id}
                     onClick={() => onChange(m.id)}
@@ -501,7 +515,16 @@ function ResultsTable({ results, onRowClick }: {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
+// ── Mode-specific model filter ────────────────────────────────────────────────
+const MODE_MODELS: Record<GenMode, ModelId[]> = {
+    structure: ['alphafold3', 'esmfold'],
+    sequence: ['rfdiffusion', 'esm3'],
+    protac: ['rfdiffusion', 'alphafold3'],
+    crispr: ['esm3', 'esmfold'],
+};
+
 export default function GenerativePage() {
+    const [mode, setMode] = useState<GenMode>('structure');
     const [pdbId, setPdbId] = useState<string | null>(null);
     const [selectedModel, setSelectedModel] = useState<ModelId>('alphafold3');
     const [numSeqs, setNumSeqs] = useState(500);
@@ -513,6 +536,15 @@ export default function GenerativePage() {
     const { step, progress, logLines, start, reset, isDone, isRunning } = useJobPoller(() => {
         setTimeout(() => setShowResults(true), 600);
     });
+
+    // When mode changes, auto-select the first compatible model and reset job
+    const handleModeChange = useCallback((m: GenMode) => {
+        setMode(m);
+        setSelectedModel(MODE_MODELS[m][0]);
+        reset();
+        setShowResults(false);
+        setPdbId(null);
+    }, [reset]);
 
     const model = MODELS.find(m => m.id === selectedModel)!;
 
@@ -548,7 +580,7 @@ export default function GenerativePage() {
                     </div>
                     <div>
                         <h1 className="text-base font-semibold text-slate-900">Generative Engine</h1>
-                        <p className="text-xs text-slate-500">Structure prediction and binder design</p>
+                        <p className="text-xs text-slate-500">{GEN_MODES.find(m => m.id === mode)?.description}</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -557,6 +589,28 @@ export default function GenerativePage() {
                     <span className="font-medium text-slate-700">{model.name}</span>
                     <span>·</span>
                     <span>~{model.estimatedGpuHours}h GPU</span>
+                </div>
+            </div>
+
+            {/* Mode switcher tab bar */}
+            <div className="bg-white border-b border-slate-200 px-6 shrink-0">
+                <div className="flex gap-1">
+                    {GEN_MODES.map((m) => {
+                        const Icon = m.icon;
+                        return (
+                            <button key={m.id} onClick={() => handleModeChange(m.id)}
+                                className={cn(
+                                    'flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap',
+                                    mode === m.id
+                                        ? 'border-brand text-brand'
+                                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                                )}
+                            >
+                                <Icon className="w-4 h-4" />
+                                {m.label}
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -573,7 +627,11 @@ export default function GenerativePage() {
                         {/* Section: Select Model */}
                         <section>
                             <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">1. Select Model</h2>
-                            <ModelSelector selected={selectedModel} onChange={setSelectedModel} />
+                            <ModelSelector
+                                selected={selectedModel}
+                                onChange={setSelectedModel}
+                                filter={MODE_MODELS[mode]}
+                            />
                         </section>
 
                         {/* Section: Load Structure */}
