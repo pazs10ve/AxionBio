@@ -61,7 +61,7 @@ export const jobs = pgTable('jobs', {
         .references(() => workspaces.id, { onDelete: 'cascade' }),
     projectId: uuid('project_id')
         .references(() => projects.id, { onDelete: 'set null' }),
-    createdBy: uuid('created_by')
+    createdBy: uuid('created_by')      
         .notNull()
         .references(() => users.id),
     name: text('name').notNull(),
