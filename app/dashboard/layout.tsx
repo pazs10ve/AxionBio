@@ -1,6 +1,7 @@
 import { auth0 } from '@/lib/auth0';
 import { redirect } from 'next/navigation';
 import { ToastProvider } from '@/components/ui/toast';
+import { QueryProvider } from '@/lib/providers/query-provider';
 
 export default async function DashboardLayout({
     children,
@@ -17,5 +18,9 @@ export default async function DashboardLayout({
         redirect('/verify-email');
     }
 
-    return <ToastProvider>{children}</ToastProvider>;
+    return (
+        <QueryProvider>
+            <ToastProvider>{children}</ToastProvider>
+        </QueryProvider>
+    );
 }

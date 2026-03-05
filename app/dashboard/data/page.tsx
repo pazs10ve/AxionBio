@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { MOCK_DATA_TREE } from '@/lib/mock-data';
+import { useState, useEffect } from 'react';
+import { useProjects } from '@/lib/hooks/use-projects';
+import { useMolecules } from '@/lib/hooks/use-molecules';
+import { useDatasets, useUploadDataset } from '@/lib/hooks/use-datasets';
 import { cn } from '@/lib/utils';
 import {
     FolderOpen, FolderClosed, FileText, Database, Upload,
@@ -12,6 +14,7 @@ import { Button } from '@/components/ui/button';
 type DataFile = {
     id: string; name: string; type: string;
     size: string; uploaded: string; by: string;
+    _raw?: any;
 };
 type DataFolder = {
     id: string; name: string; type: 'folder';
@@ -30,18 +33,24 @@ function FileIcon({ type }: { type: string }) {
 
 function UploadZone({ onClose }: { onClose: () => void }) {
     const [dragOver, setDragOver] = useState(false);
-    const [uploading, setUploading] = useState(false);
-    const [progress, setProgress] = useState(0);
+    const uploadDataset = useUploadDataset();
 
-    const handleDrop = () => {
+    const handleFiles = async (files: FileList | null) => {
+        if (!files || files.length === 0) return;
         setDragOver(false);
-        setUploading(true);
-        let p = 0;
-        const id = setInterval(() => {
-            p += Math.random() * 18;
-            setProgress(Math.min(p, 100));
-            if (p >= 100) { clearInterval(id); setTimeout(onClose, 600); }
-        }, 150);
+        // Just upload the first file for now to keep it simple, or loop
+        try {
+            await uploadDataset.mutateAsync(files[0]);
+            onClose();
+        } catch (error) {
+            console.error('Upload failed:', error);
+            alert('Upload failed. Check console.');
+        }
+    };
+
+    // Also support manual input click
+    const handleManualSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        handleFiles(e.target.files);
     };
 
     return (
@@ -53,29 +62,32 @@ function UploadZone({ onClose }: { onClose: () => void }) {
                         <X className="w-5 h-5" />
                     </button>
                 </div>
-                {uploading ? (
+                {uploadDataset.isPending ? (
                     <div className="space-y-3 py-4">
-                        <p className="text-sm text-slate-600">Uploading...</p>
+                        <p className="text-sm text-slate-600">Uploading to cloud storage...</p>
                         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-brand rounded-full transition-all duration-200"
-                                style={{ width: `${progress}%` }} />
+                            <div className="h-full bg-brand rounded-full animate-pulse" style={{ width: `100%` }} />
                         </div>
-                        <p className="text-xs text-slate-400 font-mono">{Math.round(progress)}%</p>
                     </div>
                 ) : (
                     <div
                         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                         onDragLeave={() => setDragOver(false)}
-                        onDrop={(e) => { e.preventDefault(); handleDrop(); }}
+                        onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
                         className={cn(
-                            'border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer',
+                            'border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer relative',
                             dragOver ? 'border-brand bg-brand/5' : 'border-slate-200 hover:border-slate-300'
                         )}
                     >
+                        <input
+                            type="file"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            onChange={handleManualSelect}
+                        />
                         <Upload className="w-8 h-8 text-slate-300 mx-auto mb-3" />
                         <p className="text-sm font-semibold text-slate-700 mb-1">Drop files here</p>
                         <p className="text-xs text-slate-400">Supports .pdb, .cif, .fasta, .csv, .tsv</p>
-                        <Button size="sm" className="mt-4 bg-brand hover:bg-brand-hover text-white" onClick={handleDrop}>
+                        <Button size="sm" className="mt-4 bg-brand hover:bg-brand-hover text-white pointer-events-none">
                             Browse files
                         </Button>
                     </div>
@@ -135,7 +147,7 @@ HGSQPKKKRKVGEN`}
                         {[
                             { label: 'File', value: file.name },
                             { label: 'Type', value: 'Protein Data Bank' },
-                            { label: 'Size', value: file.size },
+                            { label: 'Size', value: typeof file.size === 'number' ? `${(file.size / 1024).toFixed(1)} KB` : file.size },
                             { label: 'Uploaded by', value: file.by },
                         ].map(row => (
                             <div key={row.label} className="flex justify-between text-xs border-b border-slate-50 pb-2">
@@ -186,10 +198,81 @@ HGSQPKKKRKVGEN`}
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function DataLakePage() {
-    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['proj-kras']));
+    const { data: projects = [] } = useProjects();
+    const { data: molecules = [] } = useMolecules();
+    const { data: datasets = [] } = useDatasets();
+
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
     const [selectedFile, setSelectedFile] = useState<DataFile | null>(null);
     const [showUpload, setShowUpload] = useState(false);
     const [search, setSearch] = useState('');
+
+    useEffect(() => {
+        if (projects.length > 0 && expandedFolders.size === 0) {
+            setExpandedFolders(new Set([projects[0].id]));
+        }
+    }, [projects, expandedFolders.size]);
+
+    const dataTree: DataFolder[] = projects.map(p => {
+        const projMols = molecules.filter(m => m.project?.id === p.id);
+        return {
+            id: p.id,
+            name: p.name,
+            type: 'folder',
+            children: projMols.map(m => ({
+                id: m.id,
+                name: m.name,
+                type: m.moleculeType === 'protein' ? 'sequence' : m.moleculeType,
+                size: m.pdbFileKey ? '1.2 MB' : '4 KB',
+                uploaded: new Date(m.createdAt).toLocaleDateString(),
+                by: m.creator?.name ?? 'System',
+                _raw: m
+            }))
+        };
+    });
+
+    const formatBytes = (bytes: number) => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
+
+    const unassignedMols = molecules.filter(m => !m.project?.id);
+    if (unassignedMols.length > 0) {
+        dataTree.push({
+            id: 'unassigned',
+            name: 'Unassigned Molecules',
+            type: 'folder',
+            children: unassignedMols.map(m => ({
+                id: m.id,
+                name: m.name,
+                type: m.moleculeType === 'protein' ? 'sequence' : m.moleculeType,
+                size: m.pdbFileKey ? '1.2 MB' : '4 KB',
+                uploaded: new Date(m.createdAt).toLocaleDateString(),
+                by: m.creator?.name ?? 'System',
+                _raw: m
+            }))
+        });
+    }
+
+    if (datasets.length > 0) {
+        dataTree.push({
+            id: 'datasets_root',
+            name: 'Workspace Datasets',
+            type: 'folder',
+            children: datasets.map(d => ({
+                id: d.id,
+                name: d.name,
+                type: d.fileType.includes('csv') ? 'data' : 'file',
+                size: formatBytes(d.sizeBytes),
+                uploaded: new Date(d.createdAt).toLocaleDateString(),
+                by: d.uploader?.name ?? 'System',
+                _raw: d
+            }))
+        });
+    }
 
     const toggleFolder = (id: string) => {
         setExpandedFolders(prev => {
@@ -199,7 +282,7 @@ export default function DataLakePage() {
         });
     };
 
-    const allFiles = MOCK_DATA_TREE.flatMap(f => f.children as DataFile[]);
+    const allFiles = dataTree.flatMap(f => f.children);
     const filtered = search
         ? allFiles.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
         : null;
@@ -242,7 +325,7 @@ export default function DataLakePage() {
                 <div className="w-56 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-y-auto shrink-0 p-3">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-3">Projects</p>
                     <div className="space-y-1">
-                        {MOCK_DATA_TREE.map((folder) => {
+                        {dataTree.map((folder) => {
                             const isOpen = expandedFolders.has(folder.id);
                             return (
                                 <div key={folder.id}>

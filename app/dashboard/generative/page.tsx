@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { MODELS, MOCK_GENERATIVE_RESULTS, MOCK_LOG_LINES, MOCK_PDB_STRUCTURES } from '@/lib/mock-data';
-import { useJobPoller } from '@/lib/use-job-poller';
+import { MODELS, MOCK_PDB_STRUCTURES } from '@/lib/mock-data';
+import { useSubmitJob, useJob } from '@/lib/hooks/use-jobs';
+import { useJobStream } from '@/lib/hooks/use-job-stream';
+import { useProject } from '@/lib/project-context';
 import { cn } from '@/lib/utils';
 import {
     Dna, FlaskConical, Cpu, ChevronRight, ChevronDown, ChevronLeft,
@@ -294,7 +296,7 @@ const STEPS_DISPLAY = [
 ];
 
 function JobProgress({ step, progress, logLines, onCancel }: {
-    step: string; progress: number; logLines: string[]; onCancel: () => void;
+    step: string; progress: number; logLines: { line: string }[]; onCancel: () => void;
 }) {
     const logRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -363,7 +365,7 @@ function JobProgress({ step, progress, logLines, onCancel }: {
                     {logLines.length === 0 ? (
                         <span className="text-slate-600">Waiting for worker...</span>
                     ) : (
-                        logLines.map((l, i) => <div key={i}>{l}</div>)
+                        logLines.map((l, i) => <div key={i}>{l.line}</div>)
                     )}
                     <div className="inline-block w-2 h-3 bg-green-400 animate-pulse ml-0.5" />
                 </div>
@@ -388,14 +390,25 @@ function scoreColor(value: number, min: number, max: number, invert = false) {
 }
 
 function ResultsTable({ results, onRowClick }: {
-    results: typeof MOCK_GENERATIVE_RESULTS;
+    results: any[];
     onRowClick?: (rank: number) => void;
 }) {
     const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'rank', dir: 'asc' });
     const [favorites, setFavorites] = useState<Set<number>>(new Set());
     const [selected, setSelected] = useState<Set<number>>(new Set());
 
-    const sorted = [...results].sort((a, b) => {
+    // process results mapping from raw job.results.molecules
+    const displayResults = results.map((r, i) => ({
+        rank: i + 1,
+        sequence: r.sequence,
+        pLDDT: r.scores?.pLDDT ?? '-',
+        pTM: r.scores?.pTM ?? '-',
+        bindingAffinity: r.scores?.bindingDG ?? '-',
+        immunogenicity: r.immunogenicity ?? 'Unknown',
+        ...r
+    }));
+
+    const sorted = [...displayResults].sort((a, b) => {
         const av = a[sort.key] as number, bv = b[sort.key] as number;
         return sort.dir === 'asc' ? av - bv : bv - av;
     });
@@ -524,6 +537,7 @@ const MODE_MODELS: Record<GenMode, ModelId[]> = {
 };
 
 export default function GenerativePage() {
+    const { activeProject } = useProject();
     const [mode, setMode] = useState<GenMode>('structure');
     const [pdbId, setPdbId] = useState<string | null>(null);
     const [selectedModel, setSelectedModel] = useState<ModelId>('alphafold3');
@@ -533,16 +547,33 @@ export default function GenerativePage() {
     const [leftWidth, setLeftWidth] = useState(38); // percent
     const dragging = useRef(false);
 
-    const { step, progress, logLines, start, reset, isDone, isRunning } = useJobPoller(() => {
-        setTimeout(() => setShowResults(true), 600);
-    });
+    const [jobId, setJobId] = useState<string | null>(null);
+    const submitJob = useSubmitJob();
+    const { logs: logLines, progress, step, done: isDone, reset: resetStream } = useJobStream(jobId);
+    const { data: jobData } = useJob(isDone ? jobId : null);
+
+    const isRunning = !!jobId && !isDone && step !== 'failed';
+
+    useEffect(() => {
+        if (isDone) {
+            setTimeout(() => setShowResults(true), 600);
+        }
+    }, [isDone]);
+
+    const generatedMolecules = Array.isArray(jobData?.results?.molecules) ? (jobData.results.molecules as any[]) : [];
+    const moleculesCount = generatedMolecules.length;
+
+    const reset = useCallback(() => {
+        setJobId(null);
+        resetStream();
+        setShowResults(false);
+    }, [resetStream]);
 
     // When mode changes, auto-select the first compatible model and reset job
     const handleModeChange = useCallback((m: GenMode) => {
         setMode(m);
         setSelectedModel(MODE_MODELS[m][0]);
         reset();
-        setShowResults(false);
         setPdbId(null);
     }, [reset]);
 
@@ -550,9 +581,19 @@ export default function GenerativePage() {
 
     const handleSubmit = () => {
         if (!pdbId) return;
-        setShowResults(false);
-        const logs = [...MOCK_LOG_LINES];
-        start(logs);
+        reset();
+        submitJob.mutate(
+            {
+                name: `${model.name} generation`,
+                type: model.id,
+                projectId: activeProject?.id,
+                parameters: { target: pdbId, num_seqs: numSeqs, advanced },
+                estimatedGpuHours: model.estimatedGpuHours
+            },
+            {
+                onSuccess: (data) => setJobId(data.jobId)
+            }
+        );
     };
 
     // ── Drag resize ───────────────────────────────────────────────────────────
@@ -644,7 +685,7 @@ export default function GenerativePage() {
                         <section>
                             <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">3. Configure</h2>
                             {isRunning || isDone ? (
-                                <JobProgress step={step} progress={progress} logLines={logLines} onCancel={reset} />
+                                <JobProgress step={step || 'queued'} progress={progress} logLines={logLines} onCancel={reset} />
                             ) : (
                                 <ConfigForm numSeqs={numSeqs} onNumSeqsChange={setNumSeqs} advanced={advanced} onAdvancedToggle={() => setAdvanced(!advanced)} />
                             )}
@@ -675,7 +716,7 @@ export default function GenerativePage() {
                         <div className="p-4 border-t border-slate-100 bg-success/5 shrink-0">
                             <div className="flex items-center gap-2 text-sm font-semibold text-success mb-2">
                                 <CheckCircle2 className="w-4 h-4" />
-                                Job complete — {MOCK_GENERATIVE_RESULTS.length} candidates
+                                Job complete — {moleculesCount} candidates
                             </div>
                             <Button onClick={reset} variant="outline" size="sm" className="w-full text-xs">
                                 Run another job
@@ -699,9 +740,9 @@ export default function GenerativePage() {
                     </div>
 
                     {/* Results table (slides up after job completes) */}
-                    {showResults && (
+                    {showResults && generatedMolecules.length > 0 && (
                         <div className="flex-1 overflow-y-auto p-4 bg-slate-50">
-                            <ResultsTable results={MOCK_GENERATIVE_RESULTS} onRowClick={(rank) => console.log('Highlight rank', rank)} />
+                            <ResultsTable results={generatedMolecules} onRowClick={(rank) => console.log('Highlight rank', rank)} />
                         </div>
                     )}
                 </div>

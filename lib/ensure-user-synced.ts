@@ -1,4 +1,4 @@
-import { db } from '@/src/db';
+import { db } from '@/lib/db';
 import { users, workspaces, workspaceMembers } from '@/src/db/schema';
 import { eq } from 'drizzle-orm';
 import { cache } from 'react';

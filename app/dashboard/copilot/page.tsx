@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MOCK_SESSIONS, MOCK_CONTEXT_FILES, MOCK_TOOL_CALLS } from '@/lib/mock-data';
+import { useChat } from '@ai-sdk/react';
+import { MOCK_SESSIONS, MOCK_CONTEXT_FILES } from '@/lib/mock-data';
 import { cn } from '@/lib/utils';
 import {
     Bot, Plus, Send, Paperclip, X, ChevronRight, ChevronDown,
@@ -34,28 +35,6 @@ type Message = {
     toolCalls?: ToolCall[];
     timestamp: Date;
 };
-
-// ── Demo scripted response ────────────────────────────────────────────────────
-
-const DEMO_PROMPT = 'Run AlphaFold on PDB 7OOO, design 500 binders with RFdiffusion, run 50ns MD on the top 20, then order top 3 to Twist.';
-
-function buildDemoMessages(): Message[] {
-    return [
-        {
-            id: 'm-1',
-            role: 'user',
-            content: DEMO_PROMPT,
-            timestamp: new Date(Date.now() - 4 * 60 * 1000),
-        },
-        {
-            id: 'm-2',
-            role: 'agent',
-            content: "I've broken this into 4 sequential steps. Here's my plan — you can **Approve & Continue** or cancel any step before it runs.",
-            toolCalls: MOCK_TOOL_CALLS as ToolCall[],
-            timestamp: new Date(Date.now() - 3 * 60 * 1000 + 800),
-        },
-    ];
-}
 
 // ── Status badge / icon helpers ───────────────────────────────────────────────
 
@@ -170,7 +149,7 @@ function ToolCallCard({ call }: { call: ToolCall }) {
 
 // ── Message Bubble ────────────────────────────────────────────────────────────
 
-function MessageBubble({ msg }: { msg: Message }) {
+function MessageBubble({ msg }: { msg: any }) {
     const isUser = msg.role === 'user';
 
     return (
@@ -195,16 +174,24 @@ function MessageBubble({ msg }: { msg: Message }) {
                 </div>
 
                 {/* Tool call cards (agent only) */}
-                {msg.toolCalls && msg.toolCalls.length > 0 && (
+                {msg.toolInvocations && msg.toolInvocations.length > 0 && (
                     <div className="w-full space-y-2">
-                        {msg.toolCalls.map((tc) => (
-                            <ToolCallCard key={tc.id} call={tc} />
+                        {msg.toolInvocations.map((tc: any) => (
+                            <ToolCallCard key={tc.toolCallId} call={{
+                                id: tc.toolCallId,
+                                tool: tc.toolName,
+                                label: `Running ${tc.toolName}...`,
+                                status: tc.state === 'result' ? 'done' : 'running',
+                                input: tc.args,
+                                output: tc.result,
+                                duration: null
+                            }} />
                         ))}
                     </div>
                 )}
 
                 <span className="text-[10px] text-slate-400">
-                    {formatDistanceToNow(msg.timestamp, { addSuffix: true })}
+                    {msg.createdAt ? formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true }) : 'Just now'}
                 </span>
             </div>
         </div>
@@ -329,14 +316,12 @@ const DEMO_PROMPTS = [
     'Order the top 3 sequences to Twist Bioscience',
 ];
 
-function ChatInput({ onSend, disabled }: { onSend: (msg: string) => void; disabled?: boolean }) {
-    const [value, setValue] = useState('');
+function ChatInput({ input, handleInputChange, handleSubmit, setInput, disabled }: any) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    const handleSend = () => {
-        if (!value.trim()) return;
-        onSend(value.trim());
-        setValue('');
+    const onFormSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        handleSubmit(e);
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
     };
 
@@ -352,38 +337,38 @@ function ChatInput({ onSend, disabled }: { onSend: (msg: string) => void; disabl
             {/* Demo prompt pills */}
             <div className="flex flex-wrap gap-1.5 mb-3">
                 {DEMO_PROMPTS.map((p) => (
-                    <button key={p} onClick={() => setValue(p)}
+                    <button key={p} onClick={() => setInput(p)}
                         className="text-[10px] px-2.5 py-1 rounded-full border border-slate-200 bg-slate-50 hover:border-brand/30 hover:bg-brand/5 hover:text-brand text-slate-500 transition-colors font-medium truncate max-w-[200px]">
                         {p}
                     </button>
                 ))}
             </div>
 
-            {/* Textarea */}
-            <div className="flex gap-3 items-end">
+            {/* Textarea logic */}
+            <form onSubmit={onFormSubmit} className="flex gap-3 items-end">
                 <div className="flex-1 relative">
                     <textarea
                         ref={textareaRef}
                         rows={1}
-                        value={value}
-                        onChange={(e) => { setValue(e.target.value); autoResize(); }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                        value={input}
+                        onChange={(e) => { handleInputChange(e); autoResize(); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onFormSubmit(e); } }}
                         placeholder="Describe what you want to do..."
                         className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-all min-h-[44px]"
                         style={{ maxHeight: '144px' }}
                     />
-                    <button className="absolute right-3 bottom-3 text-slate-400 hover:text-slate-600 transition-colors">
+                    <button type="button" className="absolute right-3 bottom-3 text-slate-400 hover:text-slate-600 transition-colors">
                         <Paperclip className="w-4 h-4" />
                     </button>
                 </div>
                 <Button
-                    onClick={handleSend}
-                    disabled={!value.trim() || disabled}
+                    type="submit"
+                    disabled={!input.trim() || disabled}
                     className="h-11 w-11 p-0 bg-brand hover:bg-brand-hover text-white rounded-xl shrink-0 disabled:opacity-30"
                 >
                     <Send className="w-4 h-4" />
                 </Button>
-            </div>
+            </form>
             <p className="text-[10px] text-slate-400 mt-2 text-center">
                 Shift+Enter for new line · The agent will ask for confirmation before running jobs
             </p>
@@ -394,67 +379,23 @@ function ChatInput({ onSend, disabled }: { onSend: (msg: string) => void; disabl
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CopilotPage() {
-    const [messages, setMessages] = useState<Message[]>(buildDemoMessages());
+    const { messages, input, handleInputChange, handleSubmit, setInput, isLoading } = (useChat as any)({
+        api: '/api/copilot/chat',
+        body: {
+            sessionId: null, // Let server create a new one on first msg
+            contextJobIds: [],
+            contextMoleculeIds: [],
+        }
+    }) as any;
+
     const [sessionsPanelOpen, setSessionsPanelOpen] = useState(true);
     const [contextPanelOpen, setContextPanelOpen] = useState(true);
-    const [isAgentTyping, setIsAgentTyping] = useState(false);
     const bottomRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom on new messages
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
-
-    const handleSend = (text: string) => {
-        const userMsg: Message = {
-            id: `m-${Date.now()}`,
-            role: 'user',
-            content: text,
-            timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, userMsg]);
-        setIsAgentTyping(true);
-
-        // Simulate agent "thinking" then responding
-        setTimeout(() => {
-            const agentMsg: Message = {
-                id: `m-${Date.now() + 1}`,
-                role: 'agent',
-                content: "I'll start working on that. Let me begin by fetching the relevant structure and setting up the job pipeline.",
-                toolCalls: [
-                    {
-                        id: `tc-${Date.now()}`,
-                        tool: 'fetch_structure',
-                        label: 'Fetching target structure from RCSB...',
-                        status: 'running',
-                        duration: null,
-                        input: { query: text.slice(0, 60) },
-                        output: null,
-                    },
-                ],
-                timestamp: new Date(),
-            };
-            setMessages(prev => [...prev, agentMsg]);
-            setIsAgentTyping(false);
-
-            // Transition tool call to done after a moment
-            setTimeout(() => {
-                setMessages(prev => prev.map(m =>
-                    m.id === agentMsg.id
-                        ? {
-                            ...m,
-                            toolCalls: m.toolCalls?.map(tc => ({
-                                ...tc,
-                                status: 'done' as ToolStatus,
-                                duration: '1.4s',
-                                output: { chains: 2, residues: 189 },
-                            })),
-                        }
-                        : m
-                ));
-            }, 2200);
-        }, 1400);
-    };
 
     return (
         <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-slate-50">
@@ -498,12 +439,12 @@ export default function CopilotPage() {
 
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-                    {messages.map((msg) => (
+                    {messages.map((msg: any) => (
                         <MessageBubble key={msg.id} msg={msg} />
                     ))}
 
                     {/* Typing indicator */}
-                    {isAgentTyping && (
+                    {isLoading && messages[messages.length - 1]?.role === 'user' && (
                         <div className="flex gap-3 items-start">
                             <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                                 <Bot className="w-4 h-4 text-brand" />
@@ -520,7 +461,12 @@ export default function CopilotPage() {
                 </div>
 
                 {/* Input */}
-                <ChatInput onSend={handleSend} disabled={isAgentTyping} />
+                <ChatInput
+                    input={input}
+                    handleInputChange={handleInputChange}
+                    handleSubmit={handleSubmit}
+                    setInput={setInput}
+                    disabled={isLoading} />
             </div>
 
             {/* Context panel */}

@@ -3,26 +3,31 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
-    FolderSearch, Plus, MoreHorizontal, BookMarked, Archive, Clock,
-    CheckCircle2, X, Calendar, Cpu, FlaskConical, Bot, Dna,
-    Users, Beaker, Target, Tag, Activity, ChevronRight, Loader2,
-    ExternalLink, ArrowRight,
+    FolderSearch, Plus, X, Calendar, Cpu,
+    ChevronRight, Loader2, Activity, Dna, Beaker,
+    Target, Tag, Users, FlaskConical, Bot, Archive,
+    Clock, CheckCircle2, BookMarked, ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/components/ui/toast';
 import { useProject } from '@/lib/project-context';
-import { MOCK_MOLECULES } from '@/lib/mock-data';
-import type { MockProject, ProjectStatus } from '@/lib/mock-data';
+import { useCreateProject, type Project } from '@/lib/hooks/use-projects';
+import { useJobs, type Job } from '@/lib/hooks/use-jobs';
+import { useMolecules, type Molecule } from '@/lib/hooks/use-molecules';
 import Link from 'next/link';
+import { formatDistanceToNow } from 'date-fns';
+import { DashboardLayoutShell } from '@/components/layout/DashboardLayoutShell';
 
 // ── Status config ──────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<ProjectStatus, { label: string; cls: string; icon: React.FC<{ className?: string }> }> = {
+type ProjectStatus = 'active' | 'paused' | 'completed' | 'archived';
+
+const STATUS_CONFIG: Record<string, { label: string; cls: string; icon: React.FC<{ className?: string }> }> = {
     active: { label: 'Active', cls: 'text-success bg-success/10 border-success/20', icon: CheckCircle2 },
     paused: { label: 'Paused', cls: 'text-warning bg-warning/10 border-warning/20', icon: Clock },
     completed: { label: 'Completed', cls: 'text-brand bg-brand/10 border-brand/20', icon: CheckCircle2 },
     archived: { label: 'Archived', cls: 'text-slate-400 bg-slate-50 border-slate-200', icon: Archive },
+    Discovery: { label: 'Discovery', cls: 'text-slate-400 bg-slate-50 border-slate-200', icon: Activity },
 };
 
 const PHASE_COLORS: Record<string, string> = {
@@ -33,26 +38,35 @@ const PHASE_COLORS: Record<string, string> = {
 };
 
 const JOB_STATUS_CLS: Record<string, string> = {
-    completed: 'text-success bg-success/10 border-success/20',
+    success: 'text-success bg-success/10 border-success/20',
     running: 'text-brand bg-brand/10 border-brand/20',
     failed: 'text-error bg-error/10 border-error/20',
     queued: 'text-slate-500 bg-slate-100 border-slate-200',
 };
 
-const ORDER_STATUS_CLS: Record<string, string> = {
-    'Ordered': 'text-brand bg-brand/10 border-brand/20',
-    'In synthesis': 'text-warning bg-warning/10 border-warning/20',
-    'Delivered': 'text-success bg-success/10 border-success/20',
-    'Assay complete': 'text-violet-700 bg-violet-50 border-violet-200',
-};
-
 // ── Create Project Modal ───────────────────────────────────────────────────────
 
-function CreateProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string) => void }) {
+function CreateProjectModal({ onClose }: { onClose: () => void }) {
     const [name, setName] = useState('');
     const [target, setTarget] = useState('');
     const [indication, setIndication] = useState('');
     const [program, setProgram] = useState('Oncology');
+    const createProject = useCreateProject();
+    const { success, error } = useToast();
+
+    const handleCreate = () => {
+        if (!name.trim()) return;
+        createProject.mutate(
+            { name: name.trim(), target, indication, program },
+            {
+                onSuccess: () => {
+                    success(`Project "${name.trim()}" created — start adding molecules via the Generative Engine`);
+                    onClose();
+                },
+                onError: (err) => error(err.message),
+            }
+        );
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -98,10 +112,11 @@ function CreateProjectModal({ onClose, onCreate }: { onClose: () => void; onCrea
                 </div>
                 <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">
                     <Button variant="outline" size="sm" onClick={onClose} className="border-slate-200 text-xs">Cancel</Button>
-                    <Button onClick={() => { if (name.trim()) { onCreate(name.trim()); onClose(); } }}
-                        disabled={!name.trim()}
+                    <Button onClick={handleCreate}
+                        disabled={!name.trim() || createProject.isPending}
                         className="bg-brand hover:bg-brand-hover text-white text-xs h-9 gap-2">
-                        <Plus className="w-3.5 h-3.5" /> Create Project
+                        {createProject.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                        Create Project
                     </Button>
                 </div>
             </div>
@@ -111,24 +126,25 @@ function CreateProjectModal({ onClose, onCreate }: { onClose: () => void; onCrea
 
 // ── Project Detail Drawer ─────────────────────────────────────────────────────
 
-type DrawerTab = 'overview' | 'molecules' | 'jobs' | 'lab';
+type DrawerTab = 'overview' | 'molecules' | 'jobs';
 
 function ProjectDrawer({ project, onClose, onSetActive }: {
-    project: MockProject;
+    project: Project;
     onClose: () => void;
-    onSetActive: (p: MockProject) => void;
+    onSetActive: (p: Project) => void;
 }) {
     const [tab, setTab] = useState<DrawerTab>('overview');
     const { activeProject } = useProject();
     const isActive = activeProject?.id === project.id;
 
-    const projectMolecules = MOCK_MOLECULES.filter(m => project.moleculeIds.includes(m.id));
+    // Fetch molecules & jobs for this project via React Query
+    const { data: projectMolecules = [] } = useMolecules({ projectId: project.id });
+    const { data: projectJobs = [] } = useJobs({ projectId: project.id });
 
     const TABS: { id: DrawerTab; label: string; icon: React.FC<{ className?: string }> }[] = [
         { id: 'overview', label: 'Overview', icon: Activity },
         { id: 'molecules', label: `Molecules (${projectMolecules.length})`, icon: Dna },
-        { id: 'jobs', label: `Jobs (${project.jobHistory.length})`, icon: Cpu },
-        { id: 'lab', label: `Lab (${project.labOrders.length})`, icon: Beaker },
+        { id: 'jobs', label: `Jobs (${projectJobs.length})`, icon: Cpu },
     ];
 
     return (
@@ -140,23 +156,31 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
             <div className="fixed right-0 top-0 h-full z-50 w-[520px] max-w-full bg-white border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden">
 
                 {/* Header */}
-                <div className={cn('h-1.5 w-full shrink-0', project.color)} />
+                <div className={cn('h-1.5 w-full shrink-0', project.color ?? 'bg-brand')} />
                 <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4 shrink-0">
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className={cn(
-                                'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border',
-                                STATUS_CONFIG[project.status].cls
-                            )}>
-                                {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-                            </span>
-                            <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full border', PHASE_COLORS[project.phase] ?? 'bg-slate-100 text-slate-600 border-slate-200')}>
-                                {project.phase}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-medium">{project.program}</span>
+                            {STATUS_CONFIG[project.status ?? 'active'] && (
+                                <span className={cn(
+                                    'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border',
+                                    STATUS_CONFIG[project.status ?? 'active'].cls
+                                )}>
+                                    {(project.status ?? 'active').charAt(0).toUpperCase() + (project.status ?? 'active').slice(1)}
+                                </span>
+                            )}
+                            {project.phase && (
+                                <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full border', PHASE_COLORS[project.phase] ?? 'bg-slate-100 text-slate-600 border-slate-200')}>
+                                    {project.phase}
+                                </span>
+                            )}
+                            {project.program && <span className="text-[10px] text-slate-400 font-medium">{project.program}</span>}
                         </div>
                         <h2 className="text-lg font-bold text-slate-900 leading-snug">{project.name}</h2>
-                        <p className="text-xs text-slate-500 mt-0.5 font-mono">Target: {project.target} · {project.modality}</p>
+                        {(project.target || project.modality) && (
+                            <p className="text-xs text-slate-500 mt-0.5 font-mono">
+                                {[project.target, project.modality].filter(Boolean).join(' · ')}
+                            </p>
+                        )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                         {!isActive && (
@@ -199,7 +223,9 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
                     {/* Overview */}
                     {tab === 'overview' && (
                         <div className="p-6 space-y-6">
-                            <p className="text-sm text-slate-600 leading-relaxed">{project.description}</p>
+                            {project.description && (
+                                <p className="text-sm text-slate-600 leading-relaxed">{project.description}</p>
+                            )}
 
                             {/* Key fields */}
                             <div className="grid grid-cols-2 gap-3">
@@ -208,7 +234,7 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
                                     { label: 'Modality', value: project.modality, icon: Dna },
                                     { label: 'Phase', value: project.phase, icon: Activity },
                                     { label: 'Program', value: project.program, icon: FolderSearch },
-                                ].map(f => {
+                                ].filter(f => f.value).map(f => {
                                     const Icon = f.icon;
                                     return (
                                         <div key={f.label} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
@@ -225,9 +251,9 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
                             {/* Stats row */}
                             <div className="grid grid-cols-3 gap-2 text-center">
                                 {[
-                                    { label: 'Molecules', value: projectMolecules.length, icon: BookMarked },
+                                    { label: 'Molecules', value: project.moleculeCount, icon: BookMarked },
                                     { label: 'Jobs run', value: project.jobCount, icon: Cpu },
-                                    { label: 'Members', value: project.memberCount, icon: Users },
+                                    { label: 'Running', value: project.runningJobs, icon: Activity },
                                 ].map(s => (
                                     <div key={s.label} className="bg-white border border-slate-200 rounded-xl py-3">
                                         <p className="text-xl font-bold text-slate-800 font-mono">{s.value}</p>
@@ -237,7 +263,7 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
                             </div>
 
                             {/* Tags */}
-                            {project.tags.length > 0 && (
+                            {project.tags && project.tags.length > 0 && (
                                 <div>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Tag className="w-3 h-3" /> Tags</p>
                                     <div className="flex flex-wrap gap-1.5">
@@ -252,12 +278,14 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
                             <div className="flex items-center gap-4 text-xs text-slate-400 border-t border-slate-100 pt-4">
                                 <div className="flex items-center gap-1.5">
                                     <Calendar className="w-3.5 h-3.5" />
-                                    <span>Created {project.createdAt}</span>
+                                    <span>Created {formatDistanceToNow(new Date(project.createdAt), { addSuffix: true })}</span>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                    <Clock className="w-3.5 h-3.5" />
-                                    <span>Last activity {project.lastActivity}</span>
-                                </div>
+                                {project.updatedAt && (
+                                    <div className="flex items-center gap-1.5">
+                                        <Clock className="w-3.5 h-3.5" />
+                                        <span>Updated {formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true })}</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Quick links */}
@@ -304,12 +332,14 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-semibold text-slate-800 truncate">{mol.name}</p>
-                                                <p className="text-[10px] text-slate-400 font-mono">pLDDT {mol.pLDDT} · ΔG {mol.bindingDG} kcal/mol</p>
+                                                <p className="text-[10px] text-slate-400 font-mono">
+                                                    {mol.scores ? Object.entries(mol.scores).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(' · ') : mol.moleculeType}
+                                                </p>
                                             </div>
                                             <span className={cn(
                                                 'text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 capitalize',
-                                                (mol.status as string) === 'lead' ? 'text-success bg-success/10 border-success/20' :
-                                                    (mol.status as string) === 'candidate' ? 'text-brand bg-brand/10 border-brand/20' :
+                                                mol.status === 'lead' ? 'text-success bg-success/10 border-success/20' :
+                                                    mol.status === 'candidate' ? 'text-brand bg-brand/10 border-brand/20' :
                                                         'text-slate-400 bg-slate-50 border-slate-200'
                                             )}>{mol.status}</span>
                                         </div>
@@ -326,14 +356,14 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
                     {/* Jobs */}
                     {tab === 'jobs' && (
                         <div className="p-6">
-                            {project.jobHistory.length === 0 ? (
+                            {projectJobs.length === 0 ? (
                                 <div className="text-center py-16 space-y-2">
                                     <Cpu className="w-8 h-8 text-slate-200 mx-auto" />
                                     <p className="text-sm text-slate-400 font-medium">No jobs run yet</p>
                                 </div>
                             ) : (
                                 <div className="space-y-2">
-                                    {project.jobHistory.map(job => (
+                                    {projectJobs.map(job => (
                                         <div key={job.id} className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl">
                                             <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
                                                 {job.status === 'running'
@@ -341,48 +371,15 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
                                                     : <Cpu className="w-4 h-4 text-slate-500" />}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-semibold text-slate-800">{job.type}</p>
-                                                <p className="text-[10px] text-slate-400">{job.model} · {job.date} · {job.molecules} molecules</p>
+                                                <p className="text-sm font-semibold text-slate-800">{job.name}</p>
+                                                <p className="text-[10px] text-slate-400">
+                                                    {job.type} · {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                                                </p>
                                             </div>
                                             <span className={cn(
                                                 'text-[10px] font-semibold px-2 py-0.5 rounded-full border capitalize shrink-0',
                                                 JOB_STATUS_CLS[job.status] ?? 'text-slate-400 bg-slate-50 border-slate-200'
                                             )}>{job.status}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Lab Orders */}
-                    {tab === 'lab' && (
-                        <div className="p-6">
-                            {project.labOrders.length === 0 ? (
-                                <div className="text-center py-16 space-y-2">
-                                    <Beaker className="w-8 h-8 text-slate-200 mx-auto" />
-                                    <p className="text-sm text-slate-400 font-medium">No lab orders yet</p>
-                                    <Link href="/dashboard/lab" onClick={onClose}>
-                                        <Button size="sm" variant="outline" className="text-xs gap-2 border-slate-200 mt-2">
-                                            <FlaskConical className="w-3.5 h-3.5" /> Go to Lab Bridge
-                                        </Button>
-                                    </Link>
-                                </div>
-                            ) : (
-                                <div className="space-y-2">
-                                    {project.labOrders.map(order => (
-                                        <div key={order.id} className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl">
-                                            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                                                <Beaker className="w-4 h-4 text-slate-500" />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-semibold text-slate-800 truncate">{order.molecule}</p>
-                                                <p className="text-[10px] text-slate-400">{order.provider} · {order.qty} mg · {order.date}</p>
-                                            </div>
-                                            <span className={cn(
-                                                'text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 whitespace-nowrap',
-                                                ORDER_STATUS_CLS[order.status] ?? 'text-slate-400 bg-slate-50 border-slate-200'
-                                            )}>{order.status}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -397,8 +394,8 @@ function ProjectDrawer({ project, onClose, onSetActive }: {
 
 // ── Project Card ───────────────────────────────────────────────────────────────
 
-function ProjectCard({ project, onOpen, isActive }: { project: MockProject; onOpen: () => void; isActive: boolean }) {
-    const StatusIcon = STATUS_CONFIG[project.status].icon;
+function ProjectCard({ project, onOpen, isActive }: { project: Project; onOpen: () => void; isActive: boolean }) {
+    const StatusIcon = STATUS_CONFIG[project.status ?? 'active']?.icon ?? Activity;
     return (
         <div
             onClick={onOpen}
@@ -406,38 +403,48 @@ function ProjectCard({ project, onOpen, isActive }: { project: MockProject; onOp
                 'bg-white rounded-2xl border hover:shadow-sm transition-all cursor-pointer group overflow-hidden',
                 isActive ? 'border-brand/40 ring-2 ring-brand/10' : 'border-slate-200 hover:border-slate-300'
             )}>
-            <div className={cn('h-1 w-full', project.color)} />
+            <div className={cn('h-1 w-full', project.color ?? 'bg-brand')} />
             <div className="p-5">
                 <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                            <span className={cn(
-                                'inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border',
-                                STATUS_CONFIG[project.status].cls
-                            )}>
-                                <StatusIcon className="w-2.5 h-2.5" />
-                                {STATUS_CONFIG[project.status].label}
-                            </span>
-                            <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full border', PHASE_COLORS[project.phase] ?? '')}>
-                                {project.phase}
-                            </span>
+                            {STATUS_CONFIG[project.status ?? 'active'] && (
+                                <span className={cn(
+                                    'inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border',
+                                    STATUS_CONFIG[project.status ?? 'active'].cls
+                                )}>
+                                    <StatusIcon className="w-2.5 h-2.5" />
+                                    {STATUS_CONFIG[project.status ?? 'active'].label}
+                                </span>
+                            )}
+                            {project.phase && (
+                                <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full border', PHASE_COLORS[project.phase] ?? '')}>
+                                    {project.phase}
+                                </span>
+                            )}
                             {isActive && (
                                 <span className="text-[9px] font-bold text-brand">● Active</span>
                             )}
                         </div>
                         <h3 className="font-semibold text-slate-900 leading-snug group-hover:text-brand transition-colors">{project.name}</h3>
-                        <p className="text-xs text-slate-500 mt-0.5 font-mono">{project.target} · {project.modality}</p>
+                        {(project.target || project.modality) && (
+                            <p className="text-xs text-slate-500 mt-0.5 font-mono">
+                                {[project.target, project.modality].filter(Boolean).join(' · ')}
+                            </p>
+                        )}
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand shrink-0 mt-1 transition-colors" />
                 </div>
 
-                <p className="text-xs text-slate-500 leading-relaxed mb-4 line-clamp-2">{project.description}</p>
+                {project.description && (
+                    <p className="text-xs text-slate-500 leading-relaxed mb-4 line-clamp-2">{project.description}</p>
+                )}
 
                 <div className="grid grid-cols-3 gap-2 mb-3 text-center">
                     {[
-                        { label: 'Molecules', value: project.moleculeIds.length },
+                        { label: 'Molecules', value: project.moleculeCount },
                         { label: 'Jobs', value: project.jobCount },
-                        { label: 'Members', value: project.memberCount },
+                        { label: 'Running', value: project.runningJobs },
                     ].map(s => (
                         <div key={s.label} className="bg-slate-50 rounded-lg py-2 px-1">
                             <p className="text-base font-bold text-slate-800 font-mono">{s.value}</p>
@@ -446,9 +453,11 @@ function ProjectCard({ project, onOpen, isActive }: { project: MockProject; onOp
                     ))}
                 </div>
 
-                <p className="text-[10px] text-slate-400 truncate">
-                    <span className="font-medium text-slate-500">{project.indication}</span>
-                </p>
+                {project.indication && (
+                    <p className="text-[10px] text-slate-400 truncate">
+                        <span className="font-medium text-slate-500">{project.indication}</span>
+                    </p>
+                )}
             </div>
         </div>
     );
@@ -467,21 +476,27 @@ const STATUS_FILTERS: { label: string; value: ProjectStatus | 'all' }[] = [
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function ProjectsPage() {
-    const { projects, activeProject, setActiveProject } = useProject();
+    const { projects, activeProject, setActiveProject, isLoading } = useProject();
     const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'all'>('all');
     const [showCreate, setShowCreate] = useState(false);
-    const [drawerProject, setDrawerProject] = useState<MockProject | null>(null);
+    const [drawerProject, setDrawerProject] = useState<Project | null>(null);
     const { success } = useToast();
 
     const filtered = projects.filter(p => statusFilter === 'all' || p.status === statusFilter);
 
-    const handleCreate = (name: string) => {
-        success(`Project "${name}" created — start adding molecules via the Generative Engine`);
-    };
+    if (isLoading) {
+        return (
+            <DashboardLayoutShell>
+                <div className="flex items-center justify-center h-64">
+                    <Loader2 className="w-6 h-6 text-brand animate-spin" />
+                </div>
+            </DashboardLayoutShell>
+        );
+    }
 
     return (
         <div className="p-6 max-w-7xl mx-auto">
-            {showCreate && <CreateProjectModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
+            {showCreate && <CreateProjectModal onClose={() => setShowCreate(false)} />}
             {drawerProject && (
                 <ProjectDrawer
                     project={drawerProject}

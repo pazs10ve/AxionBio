@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { db } from '@/src/db';
 import { users, workspaceMembers, jobs, molecules, activityLogs } from '@/src/db/schema';
 import { and, count, desc, eq, gte, sql, sum } from 'drizzle-orm';
+import Link from 'next/link';
 import { DashboardLayoutShell } from '@/components/layout/DashboardLayoutShell';
 import { DashboardKPIRow } from '@/components/dashboard/DashboardKPIRow';
 import { RecentJobsTable } from '@/components/dashboard/RecentJobsTable';
@@ -130,14 +131,18 @@ export default async function DashboardPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <Button variant="outline" className="bg-white hover:bg-slate-50 shadow-sm border-slate-200 text-slate-600 font-medium h-10 px-4">
-                        <Bot className="w-4 h-4 mr-2 text-slate-500" />
-                        Talk to Copilot
-                    </Button>
-                    <Button className="bg-brand hover:bg-brand-hover text-white shadow-sm font-medium h-10 px-4">
-                        <Plus className="w-4 h-4 mr-2" />
-                        New Job
-                    </Button>
+                    <Link href="/dashboard/copilot">
+                        <Button variant="outline" className="bg-white hover:bg-slate-50 shadow-sm border-slate-200 text-slate-600 font-medium h-10 px-4">
+                            <Bot className="w-4 h-4 mr-2 text-slate-500" />
+                            Talk to Copilot
+                        </Button>
+                    </Link>
+                    <Link href="/dashboard/generative">
+                        <Button className="bg-brand hover:bg-brand-hover text-white shadow-sm font-medium h-10 px-4">
+                            <Plus className="w-4 h-4 mr-2" />
+                            New Job
+                        </Button>
+                    </Link>
                 </div>
             </div>
 

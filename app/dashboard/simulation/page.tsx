@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { generateMockRMSDData, MOCK_MD_RESULT, MOCK_MOLECULES } from '@/lib/mock-data';
-import { useJobPoller } from '@/lib/use-job-poller';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { generateMockRMSDData, MOCK_MD_RESULT } from '@/lib/mock-data';
+import { useSubmitJob, useJob } from '@/lib/hooks/use-jobs';
+import { useMolecules } from '@/lib/hooks/use-molecules';
+import { useJobStream } from '@/lib/hooks/use-job-stream';
+import { useProject } from '@/lib/project-context';
 import { cn } from '@/lib/utils';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -25,7 +28,7 @@ const SIM_MODES: { id: SimMode; label: string; description: string; icon: React.
 
 // ── Molecule Picker Modal ─────────────────────────────────────────────────────
 
-type MolEntry = { id: string; name: string; source: 'library' | 'upload'; target?: string };
+type MolEntry = { id: string; name: string; source: 'library' | 'upload' };
 
 function MoleculePickerModal({
     existing,
@@ -36,6 +39,7 @@ function MoleculePickerModal({
     onAdd: (mols: MolEntry[]) => void;
     onClose: () => void;
 }) {
+    const { data: moleculesData = [] } = useMolecules();
     const [tab, setTab] = useState<'library' | 'upload'>('library');
     const [selected, setSelected] = useState<Set<string>>(new Set(existing.map(e => e.id)));
     const [dragOver, setDragOver] = useState(false);
@@ -63,9 +67,9 @@ function MoleculePickerModal({
     const removeUploaded = (id: string) => setUploaded(prev => prev.filter(u => u.id !== id));
 
     const apply = () => {
-        const libraryMols = MOCK_MOLECULES
+        const libraryMols = moleculesData
             .filter(m => selected.has(m.id))
-            .map(m => ({ id: m.id, name: m.name, source: 'library' as const, target: m.target }));
+            .map(m => ({ id: m.id, name: m.name, source: 'library' as const }));
         onAdd([...libraryMols, ...uploaded]);
         onClose();
     };
@@ -103,8 +107,9 @@ function MoleculePickerModal({
                             <p className="text-xs text-slate-400 mb-3">
                                 Select molecules from your workspace library. <strong className="text-slate-600">{selected.size}</strong> selected.
                             </p>
-                            {MOCK_MOLECULES.map(m => {
+                            {moleculesData.map(m => {
                                 const isSelected = selected.has(m.id);
+                                const pLDDT = (m.scores as any)?.pLDDT;
                                 return (
                                     <button key={m.id} onClick={() => toggleLib(m.id)}
                                         className={cn(
@@ -121,10 +126,10 @@ function MoleculePickerModal({
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-slate-800">{m.name}</p>
-                                            <p className="text-xs text-slate-400 truncate">{m.target} · {m.modality.replace('_', ' ')}</p>
+                                            <p className="text-xs text-slate-400 truncate">{(m.modality || m.moleculeType).replace('_', ' ')}</p>
                                         </div>
                                         <div className="shrink-0 text-right">
-                                            <span className="text-[10px] font-mono font-bold text-success">{m.pLDDT}</span>
+                                            <span className="text-[10px] font-mono font-bold text-success">{pLDDT ?? 'N/A'}</span>
                                             <p className="text-[9px] text-slate-400">pLDDT</p>
                                         </div>
                                     </button>
@@ -266,7 +271,6 @@ function MDConfigForm({
                                 )} />
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-slate-800 truncate">{m.name}</p>
-                                    {m.target && <p className="text-[10px] text-slate-400 leading-none mt-0.5">{m.target}</p>}
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                     {m.source === 'upload' && (
@@ -489,6 +493,7 @@ function ResultsSummary() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SimulationPage() {
+    const { activeProject } = useProject();
     const [mode, setMode] = useState<SimMode>('md');
     const [allData] = useState(() => generateMockRMSDData(100));
     const [liveData, setLiveData] = useState<ReturnType<typeof generateMockRMSDData>>([]);
@@ -501,15 +506,29 @@ export default function SimulationPage() {
     const handleAddMolecules = (mols: MolEntry[]) => setMolecules(mols);
     const handleRemoveMolecule = (id: string) => setMolecules(prev => prev.filter(m => m.id !== id));
 
-    const { step, progress, logLines, start, reset, isDone, isRunning } = useJobPoller(() => {
-        setLiveData(allData);
-    });
+    const [jobId, setJobId] = useState<string | null>(null);
+    const submitJob = useSubmitJob();
+    const { logs: logLines, progress, step, done: isDone, reset: resetStream } = useJobStream(jobId);
+    const { data: jobData } = useJob(isDone ? jobId : null);
+
+    const isRunning = !!jobId && !isDone && step !== 'failed';
+
+    useEffect(() => {
+        if (isDone) {
+            setLiveData(allData);
+        }
+    }, [isDone, allData]);
+
+    const handleReset = useCallback(() => {
+        setJobId(null);
+        resetStream();
+        setLiveData([]);
+        liveIndexRef.current = 0;
+    }, [resetStream]);
 
     const handleModeChange = (m: SimMode) => {
         setMode(m);
-        reset();
-        setLiveData([]);
-        liveIndexRef.current = 0;
+        handleReset();
     };
 
     // Stream data points into the chart as the job "runs"
@@ -525,15 +544,22 @@ export default function SimulationPage() {
     }, [isRunning, allData]);
 
     const handleStart = () => {
+        if (molecules.length === 0) return;
         liveIndexRef.current = 0;
         setLiveData([]);
-        start([]);
-    };
-
-    const handleReset = () => {
-        reset();
-        setLiveData([]);
-        liveIndexRef.current = 0;
+        resetStream();
+        submitJob.mutate(
+            {
+                name: `GROMACS MD (${molecules[0]?.name})`,
+                type: 'gromacs',
+                projectId: activeProject?.id,
+                parameters: { target: molecules[0]?.id },
+                estimatedGpuHours: 6.2
+            },
+            {
+                onSuccess: (data) => setJobId(data.jobId)
+            }
+        );
     };
 
     return (
@@ -596,7 +622,7 @@ export default function SimulationPage() {
                     {isRunning || isDone ? (
                         <div className="space-y-4">
                             <div className="flex justify-between text-sm mb-2">
-                                <span className="text-slate-600 font-medium capitalize">{step.replace('postprocessing', 'Post-processing')}</span>
+                                <span className="text-slate-600 font-medium capitalize">{(step || 'queued').replace('postprocessing', 'Post-processing')}</span>
                                 <span className="font-mono text-brand tabular-nums">{Math.round(progress)}%</span>
                             </div>
                             <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -606,7 +632,7 @@ export default function SimulationPage() {
                             <div className="bg-slate-950 rounded-xl p-3 font-mono text-[11px] text-green-400 h-36 overflow-y-auto">
                                 {logLines.length === 0
                                     ? <span className="text-slate-600">Initializing GROMACS...</span>
-                                    : logLines.slice(-8).map((l, i) => <div key={i}>{l}</div>)
+                                    : logLines.slice(-8).map((l, i) => <div key={l.id || i}>{l.line}</div>)
                                 }
                             </div>
                             {isDone && (

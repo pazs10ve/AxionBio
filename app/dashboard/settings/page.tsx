@@ -4,6 +4,8 @@ import { useState } from 'react';
 import {
     MOCK_TEAM_MEMBERS, MOCK_API_KEYS, MOCK_AUDIT_LOGS,
 } from '@/lib/mock-data';
+import { useMe } from '@/lib/hooks/use-me';
+import { useActivity } from '@/lib/hooks/use-activity';
 import { cn } from '@/lib/utils';
 import {
     Building2, Users, Key, FileText, CreditCard,
@@ -23,13 +25,20 @@ const ROLE_COLORS: Record<string, string> = {
 // ── Workspace Tab ────────────────────────────────────────────────────────────
 
 function WorkspaceTab() {
+    const { data: me } = useMe();
+    const activeWorkspace = me?.workspaces?.[0];
+
     return (
         <div className="max-w-2xl space-y-6">
             <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
                 <h2 className="text-sm font-semibold text-slate-900">Workspace Settings</h2>
                 <div>
                     <label className="text-xs font-semibold text-slate-500 block mb-1.5">Workspace Name</label>
-                    <input defaultValue="Smith Lab" className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand" />
+                    <input
+                        key={activeWorkspace?.id}
+                        defaultValue={activeWorkspace?.name ?? ''}
+                        className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+                    />
                 </div>
                 <div>
                     <label className="text-xs font-semibold text-slate-500 block mb-1.5">Slug</label>
@@ -37,14 +46,18 @@ function WorkspaceTab() {
                         <span className="h-9 px-3 text-sm border border-r-0 border-slate-200 rounded-l-lg bg-slate-50 flex items-center text-slate-400">
                             axionbio.com/
                         </span>
-                        <input defaultValue="smith-lab" className="flex-1 h-9 px-3 text-sm border border-slate-200 rounded-r-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand font-mono" />
+                        <input
+                            key={`slug-${activeWorkspace?.id}`}
+                            defaultValue={activeWorkspace?.slug ?? ''}
+                            className="flex-1 h-9 px-3 text-sm border border-slate-200 rounded-r-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand font-mono"
+                        />
                     </div>
                 </div>
                 <div>
                     <label className="text-xs font-semibold text-slate-500 block mb-1.5">Plan</label>
                     <div className="flex items-center justify-between p-3 rounded-xl bg-brand/5 border border-brand/20">
                         <div>
-                            <p className="text-sm font-semibold text-brand">Pro Plan</p>
+                            <p className="text-sm font-semibold text-brand capitalize">{activeWorkspace?.plan ?? 'trial'} Plan</p>
                             <p className="text-xs text-slate-500">50,000 GPU-hours / month · 25 team members</p>
                         </div>
                         <Button size="sm" variant="outline" className="text-xs border-slate-200 h-8">Upgrade</Button>
@@ -254,9 +267,19 @@ function ApiKeysTab() {
 
 function AuditLogTab() {
     const [filter, setFilter] = useState('');
+    const { data: activities = [] } = useActivity();
+
+    const auditLogs = activities.map(a => ({
+        id: a.id,
+        actor: a.actor.name ?? 'System',
+        action: a.actionType.replace(/_/g, ' '),
+        target: a.entityId ?? (a.metadata ? JSON.stringify(a.metadata) : 'N/A'),
+        timestamp: new Date(a.createdAt).toLocaleString()
+    }));
+
     const filtered = filter
-        ? MOCK_AUDIT_LOGS.filter(l => l.action.toLowerCase().includes(filter.toLowerCase()) || l.actor.toLowerCase().includes(filter.toLowerCase()))
-        : MOCK_AUDIT_LOGS;
+        ? auditLogs.filter(l => l.action.toLowerCase().includes(filter.toLowerCase()) || l.actor.toLowerCase().includes(filter.toLowerCase()))
+        : auditLogs;
 
     return (
         <div className="space-y-4">
