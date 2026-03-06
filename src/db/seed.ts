@@ -159,6 +159,8 @@ async function seed() {
                 moleculeType: 'protein',
                 sequence: 'MGGHHHHHHGSQPKKKRKV',
                 scores: { pLDDT: 91.4, pTM: 0.87, bindingAffinity: -9.8, immunogenicity: 'low' },
+                pdbFileKey: 'molecules/seed_mol_1/structure.pdb',
+                status: 'candidate',
                 isFavorited: true,
             },
             {
@@ -170,6 +172,8 @@ async function seed() {
                 moleculeType: 'protein',
                 sequence: 'MDKKYSIGLDIGTNSVGWAVITDE',
                 scores: { pLDDT: 88.2, pTM: 0.82, bindingAffinity: -8.1, immunogenicity: 'medium' },
+                pdbFileKey: 'molecules/seed_mol_2/structure.pdb',
+                status: 'candidate',
                 isFavorited: false,
             },
             {
@@ -181,9 +185,11 @@ async function seed() {
                 moleculeType: 'protein',
                 sequence: 'MGSEGHHHHHHGSQPKKK',
                 scores: { pLDDT: 89.7, pTM: 0.84, bindingAffinity: -9.1, immunogenicity: 'low' },
+                pdbFileKey: 'molecules/seed_mol_3/structure.pdb',
+                status: 'candidate',
                 isFavorited: false,
             },
-        ]);
+        ] as any);
         console.log('✅ Molecules saved');
 
         // ── 7. Activity Logs ──────────────────────────────────────────────────

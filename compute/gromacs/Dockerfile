@@ -9,11 +9,11 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY ../shared/requirements.txt /app/shared_reqs.txt
+COPY compute/shared/requirements.txt /app/shared_reqs.txt
 RUN pip install --no-cache-dir -r /app/shared_reqs.txt
 
-COPY ../shared/client.py /app/client.py
-COPY main.py /app/main.py
+COPY compute/shared/client.py /app/client.py
+COPY compute/gromacs/main.py /app/main.py
 
 ENV DATABASE_URL=""
 ENV JOB_ID=""

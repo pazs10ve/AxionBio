@@ -1,16 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import {
-    MOCK_TEAM_MEMBERS, MOCK_API_KEYS, MOCK_AUDIT_LOGS,
-} from '@/lib/mock-data';
 import { useMe } from '@/lib/hooks/use-me';
 import { useActivity } from '@/lib/hooks/use-activity';
+import { useMembers } from '@/lib/hooks/use-members';
+import { useApiKeys, useCreateApiKey, useRevokeApiKey } from '@/lib/hooks/use-api-keys';
+import { useUsage } from '@/lib/hooks/use-usage';
 import { cn } from '@/lib/utils';
 import {
     Building2, Users, Key, FileText, CreditCard,
     Plus, Copy, Trash2, Check, ChevronDown, Shield,
-    Eye, EyeOff, Mail,
+    Eye, EyeOff, Mail, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -20,6 +20,9 @@ const ROLE_COLORS: Record<string, string> = {
     Admin: 'text-brand bg-brand/10 border-brand/20',
     Editor: 'text-success bg-success/10 border-success/20',
     Viewer: 'text-slate-500 bg-slate-50 border-slate-200',
+    admin: 'text-brand bg-brand/10 border-brand/20',
+    editor: 'text-success bg-success/10 border-success/20',
+    viewer: 'text-slate-500 bg-slate-50 border-slate-200',
 };
 
 // ── Workspace Tab ────────────────────────────────────────────────────────────
@@ -86,21 +89,20 @@ function WorkspaceTab() {
 // ── Team Tab ──────────────────────────────────────────────────────────────────
 
 function TeamTab() {
+    const { data: me } = useMe();
+    const ws = me?.workspaces?.[0];
+    const { data: members = [], isLoading } = useMembers(ws?.id);
     const [inviting, setInviting] = useState(false);
     const [email, setEmail] = useState('');
-    const [copied, setCopied] = useState<string | null>(null);
 
-    const copyInviteLink = (id: string) => {
-        setCopied(id);
-        setTimeout(() => setCopied(null), 2000);
-    };
+    if (isLoading) return <div className="flex py-12 justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-300" /></div>;
 
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-sm font-semibold text-slate-800">Team Members</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">{MOCK_TEAM_MEMBERS.length} members · 25 max on Pro</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{members.length} members · 25 max on Pro</p>
                 </div>
                 <Button onClick={() => setInviting(!inviting)} className="bg-brand hover:bg-brand-hover text-white h-9 text-sm gap-2">
                     <Plus className="w-4 h-4" /> Invite member
@@ -108,7 +110,7 @@ function TeamTab() {
             </div>
 
             {inviting && (
-                <div className="bg-brand/5 border border-brand/20 rounded-2xl p-5 flex gap-3 items-end">
+                <div className="bg-brand/5 border border-brand/20 rounded-2xl p-5 flex gap-3 items-end animate-in fade-in slide-in-from-top-2">
                     <div className="flex-1">
                         <label className="text-xs font-semibold text-slate-500 block mb-1.5">Email address</label>
                         <div className="relative">
@@ -136,53 +138,34 @@ function TeamTab() {
                         <tr>
                             <th className="px-5 py-3 text-left">Member</th>
                             <th className="px-5 py-3 text-left">Role</th>
-                            <th className="px-5 py-3 text-left">Status</th>
                             <th className="px-5 py-3 text-left">Joined</th>
                             <th className="px-5 py-3 text-left"></th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                        {MOCK_TEAM_MEMBERS.map((m) => (
+                        {members.map((m) => (
                             <tr key={m.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-5 py-4">
                                     <div className="flex items-center gap-3">
                                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand to-accent flex items-center justify-center text-white text-xs font-bold shrink-0">
-                                            {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                            {m.user.name?.split(' ').map(n => n[0]).join('').slice(0, 2) || m.user.email[0].toUpperCase()}
                                         </div>
                                         <div>
-                                            <p className="font-semibold text-slate-800">{m.name}</p>
-                                            <p className="text-xs text-slate-400">{m.email}</p>
+                                            <p className="font-semibold text-slate-800">{m.user.name || 'Invited User'}</p>
+                                            <p className="text-xs text-slate-400">{m.user.email}</p>
                                         </div>
                                     </div>
                                 </td>
                                 <td className="px-5 py-4">
-                                    <span className={cn('text-xs font-semibold px-2.5 py-1 rounded-full border', ROLE_COLORS[m.role])}>
+                                    <span className={cn('text-xs font-semibold px-2.5 py-1 rounded-full border capitalize', ROLE_COLORS[m.role])}>
                                         {m.role}
                                     </span>
                                 </td>
-                                <td className="px-5 py-4">
-                                    <span className={cn(
-                                        'text-xs font-semibold px-2.5 py-1 rounded-full border',
-                                        m.status === 'active'
-                                            ? 'text-success bg-success/10 border-success/20'
-                                            : 'text-slate-400 bg-slate-50 border-slate-200'
-                                    )}>
-                                        {m.status === 'active' ? 'Active' : 'Invited'}
-                                    </span>
-                                </td>
-                                <td className="px-5 py-4 text-slate-500">{m.joined}</td>
-                                <td className="px-5 py-4">
-                                    {m.status === 'invited' ? (
-                                        <button onClick={() => copyInviteLink(m.id)}
-                                            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-brand transition-colors">
-                                            {copied === m.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                                            {copied === m.id ? 'Copied!' : 'Copy link'}
-                                        </button>
-                                    ) : (
-                                        <button className="text-slate-300 hover:text-error transition-colors">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    )}
+                                <td className="px-5 py-4 text-slate-500 whitespace-nowrap">{new Date(m.joinedAt).toLocaleDateString()}</td>
+                                <td className="px-5 py-4 text-right">
+                                    <button className="text-slate-300 hover:text-error transition-colors">
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
                                 </td>
                             </tr>
                         ))}
@@ -196,8 +179,17 @@ function TeamTab() {
 // ── API Keys Tab ──────────────────────────────────────────────────────────────
 
 function ApiKeysTab() {
+    const { data: me } = useMe();
+    const wsId = me?.workspaces?.[0]?.id;
+    const { data: apiKeys = [], isLoading } = useApiKeys(wsId);
+    const createKey = useCreateApiKey();
+    const revokeKey = useRevokeApiKey();
+
     const [revealed, setRevealed] = useState<Set<string>>(new Set());
     const [copied, setCopied] = useState<string | null>(null);
+    const [newKeyCleartext, setNewKeyCleartext] = useState<string | null>(null);
+    const [modalOpen, setModalOpen] = useState(false);
+    const [keyName, setKeyName] = useState('');
 
     const toggleReveal = (id: string) => {
         setRevealed(prev => {
@@ -207,10 +199,20 @@ function ApiKeysTab() {
         });
     };
 
-    const copyKey = (id: string) => {
+    const copyToClipboard = (text: string, id: string) => {
+        navigator.clipboard.writeText(text);
         setCopied(id);
         setTimeout(() => setCopied(null), 2000);
     };
+
+    const handleCreate = async () => {
+        if (!keyName || !wsId) return;
+        const res = await createKey.mutateAsync({ workspaceId: wsId, name: keyName });
+        setNewKeyCleartext(res.cleartextKey!);
+        setKeyName('');
+    };
+
+    if (isLoading) return <div className="flex py-12 justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-300" /></div>;
 
     return (
         <div className="space-y-4">
@@ -219,20 +221,83 @@ function ApiKeysTab() {
                     <h2 className="text-sm font-semibold text-slate-800">API Keys</h2>
                     <p className="text-xs text-slate-500 mt-0.5">Manage programmatic access to your workspace</p>
                 </div>
-                <Button className="bg-brand hover:bg-brand-hover text-white h-9 text-sm gap-2">
+                <Button onClick={() => setModalOpen(true)} className="bg-brand hover:bg-brand-hover text-white h-9 text-sm gap-2">
                     <Plus className="w-4 h-4" /> Generate key
                 </Button>
             </div>
 
+            {modalOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200">
+                        {!newKeyCleartext ? (
+                            <>
+                                <h3 className="text-lg font-bold text-slate-900 mb-2">Generate New API Key</h3>
+                                <p className="text-sm text-slate-500 mb-6">Give your key a name to identify it later.</p>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs font-semibold text-slate-500 block mb-1.5">Key Name</label>
+                                        <input
+                                            value={keyName}
+                                            onChange={e => setKeyName(e.target.value)}
+                                            placeholder="e.g. Production Adapter"
+                                            className="w-full h-10 px-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/30"
+                                        />
+                                    </div>
+                                    <div className="flex gap-3 justify-end pt-2">
+                                        <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancel</Button>
+                                        <Button onClick={handleCreate} disabled={createKey.isPending} className="bg-brand text-white">
+                                            {createKey.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Generate Key'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center mb-4">
+                                    <Shield className="w-6 h-6 text-success" />
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-900 mb-2">Key Generated Successfully</h3>
+                                <p className="text-sm text-slate-500 mb-4 bg-amber-50 border border-amber-200 p-3 rounded-xl">
+                                    <span className="font-bold text-amber-800">Important:</span> Copy this key now. You won't be able to see it again for security reasons.
+                                </p>
+                                <div className="flex items-center gap-2 mb-6">
+                                    <div className="flex-1 font-mono text-sm bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-600 break-all">
+                                        {newKeyCleartext}
+                                    </div>
+                                    <Button onClick={() => copyToClipboard(newKeyCleartext, 'new')} variant="outline" className="shrink-0 h-10 w-10 p-0">
+                                        {copied === 'new' ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+                                    </Button>
+                                </div>
+                                <Button className="w-full bg-slate-900 text-white" onClick={() => { setModalOpen(false); setNewKeyCleartext(null); }}>
+                                    I've saved my key
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+
             <div className="space-y-3">
-                {MOCK_API_KEYS.map((k) => (
+                {apiKeys.length === 0 && (
+                    <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-12 text-center">
+                        <Key className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                        <p className="text-sm text-slate-500 font-medium">No API keys generated yet</p>
+                    </div>
+                )}
+                {apiKeys.map((k) => (
                     <div key={k.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
                         <div className="flex items-start justify-between gap-4 mb-3">
                             <div>
                                 <p className="text-sm font-semibold text-slate-800">{k.name}</p>
-                                <p className="text-xs text-slate-400 mt-0.5">Last used: {k.lastUsed} · Created {k.created}</p>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                    Last used: {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : 'Never'} · Created {new Date(k.createdAt).toLocaleDateString()}
+                                </p>
                             </div>
-                            <button className="text-slate-300 hover:text-error transition-colors">
+                            <button
+                                onClick={() => revokeKey.mutate({ workspaceId: wsId!, id: k.id })}
+                                disabled={revokeKey.isPending}
+                                className="text-slate-300 hover:text-error transition-colors disabled:opacity-50"
+                            >
                                 <Trash2 className="w-4 h-4" />
                             </button>
                         </div>
@@ -243,10 +308,6 @@ function ApiKeysTab() {
                             <button onClick={() => toggleReveal(k.id)}
                                 className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors">
                                 {revealed.has(k.id) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                            <button onClick={() => copyKey(k.id)}
-                                className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-brand hover:border-brand/30 hover:bg-brand/5 transition-colors">
-                                {copied === k.id ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
                             </button>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -267,7 +328,7 @@ function ApiKeysTab() {
 
 function AuditLogTab() {
     const [filter, setFilter] = useState('');
-    const { data: activities = [] } = useActivity();
+    const { data: activities = [], isLoading } = useActivity();
 
     const auditLogs = activities.map(a => ({
         id: a.id,
@@ -280,6 +341,8 @@ function AuditLogTab() {
     const filtered = filter
         ? auditLogs.filter(l => l.action.toLowerCase().includes(filter.toLowerCase()) || l.actor.toLowerCase().includes(filter.toLowerCase()))
         : auditLogs;
+
+    if (isLoading) return <div className="flex py-12 justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-300" /></div>;
 
     return (
         <div className="space-y-4">
@@ -305,7 +368,7 @@ function AuditLogTab() {
                     <tbody className="divide-y divide-slate-50">
                         {filtered.map((l) => (
                             <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="px-5 py-3.5">
+                                <td className="px-5 py-3.5 whitespace-nowrap">
                                     <div className="flex items-center gap-2.5">
                                         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand to-accent flex items-center justify-center text-white text-[10px] font-bold shrink-0">
                                             {l.actor.split(' ').map(n => n[0]).join('').slice(-2)}
@@ -313,9 +376,9 @@ function AuditLogTab() {
                                         <span className="font-medium text-slate-800">{l.actor}</span>
                                     </div>
                                 </td>
-                                <td className="px-5 py-3.5 text-slate-600">{l.action}</td>
-                                <td className="px-5 py-3.5 text-slate-500 font-mono text-xs">{l.target}</td>
-                                <td className="px-5 py-3.5 text-slate-400 font-mono text-xs">{l.timestamp}</td>
+                                <td className="px-5 py-3.5 text-slate-600 capitalize">{l.action}</td>
+                                <td className="px-5 py-3.5 text-slate-500 font-mono text-xs truncate max-w-[200px]">{l.target}</td>
+                                <td className="px-5 py-3.5 text-slate-400 font-mono text-xs whitespace-nowrap">{l.timestamp}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -328,10 +391,16 @@ function AuditLogTab() {
 // ── Billing Tab ───────────────────────────────────────────────────────────────
 
 function BillingTab() {
-    const usage = [
-        { label: 'GPU Hours', used: 3280, limit: 50000, unit: 'h' },
-        { label: 'Storage', used: 42, limit: 500, unit: 'GB' },
-        { label: 'Synthesis Orders', used: 3, limit: 20, unit: '' },
+    const { data: me } = useMe();
+    const wsId = me?.workspaces?.[0]?.id;
+    const { data: usage, isLoading } = useUsage(wsId);
+
+    if (isLoading) return <div className="flex py-12 justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-300" /></div>;
+
+    const items = [
+        { label: 'GPU Hours', used: usage?.gpuHoursUsed ?? 0, limit: usage?.gpuHoursLimit ?? 50000, unit: 'h' },
+        { label: 'Storage', used: usage?.storageUsedGb ?? 0, limit: usage?.storageLimitGb ?? 500, unit: ' GB' },
+        { label: 'Molecules', used: usage?.moleculeCount ?? 0, limit: 10000, unit: '' },
     ];
 
     return (
@@ -341,11 +410,11 @@ function BillingTab() {
                 <div className="flex items-start justify-between mb-4">
                     <div>
                         <p className="text-sm font-semibold opacity-80">Current Plan</p>
-                        <h2 className="text-2xl font-bold mt-0.5">Pro</h2>
+                        <h2 className="text-2xl font-bold mt-0.5">Enterprise (Trial)</h2>
                     </div>
                     <Shield className="w-8 h-8 opacity-60" />
                 </div>
-                <p className="text-sm opacity-80 mb-4">Renews on April 1, 2026 · $1,200/month</p>
+                <p className="text-sm opacity-80 mb-4">Renews on April 1, 2026 · $0.00 (Trial Credits)</p>
                 <Button size="sm" className="bg-white/20 hover:bg-white/30 text-white border-none h-8 text-xs">
                     Manage subscription
                 </Button>
@@ -355,14 +424,14 @@ function BillingTab() {
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
                 <h2 className="text-sm font-semibold text-slate-900 mb-4">Usage this month</h2>
                 <div className="space-y-4">
-                    {usage.map((u) => {
-                        const pct = Math.round((u.used / u.limit) * 100);
+                    {items.map((u) => {
+                        const pct = Math.round(((Number(u.used)) / u.limit) * 100);
                         return (
                             <div key={u.label}>
                                 <div className="flex items-center justify-between text-xs mb-1.5">
                                     <span className="font-semibold text-slate-700">{u.label}</span>
                                     <span className="text-slate-500 font-mono">
-                                        {u.used.toLocaleString()}{u.unit} / {u.limit.toLocaleString()}{u.unit}
+                                        {u.used}{u.unit} / {u.limit}{u.unit}
                                     </span>
                                 </div>
                                 <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
@@ -371,7 +440,7 @@ function BillingTab() {
                                             'h-full rounded-full transition-all',
                                             pct > 85 ? 'bg-error' : pct > 60 ? 'bg-warning' : 'bg-brand'
                                         )}
-                                        style={{ width: `${pct}%` }}
+                                        style={{ width: `${Math.min(100, pct)}%` }}
                                     />
                                 </div>
                                 <p className="text-[10px] text-slate-400 mt-1">{pct}% used</p>
@@ -379,48 +448,6 @@ function BillingTab() {
                         );
                     })}
                 </div>
-            </div>
-
-            {/* Invoice history */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-100">
-                    <h2 className="text-sm font-semibold text-slate-900">Invoice history</h2>
-                </div>
-                <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                        <tr>
-                            <th className="px-5 py-3 text-left">Period</th>
-                            <th className="px-5 py-3 text-left">Amount</th>
-                            <th className="px-5 py-3 text-left">Status</th>
-                            <th className="px-5 py-3 text-left"></th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                        {[
-                            { period: 'March 2026', amount: '$1,200.00', status: 'Open' },
-                            { period: 'February 2026', amount: '$1,200.00', status: 'Paid' },
-                            { period: 'January 2026', amount: '$1,200.00', status: 'Paid' },
-                        ].map((inv) => (
-                            <tr key={inv.period} className="hover:bg-slate-50">
-                                <td className="px-5 py-3.5 font-semibold text-slate-800">{inv.period}</td>
-                                <td className="px-5 py-3.5 font-mono text-slate-700">{inv.amount}</td>
-                                <td className="px-5 py-3.5">
-                                    <span className={cn(
-                                        'text-xs font-semibold px-2 py-0.5 rounded-full border',
-                                        inv.status === 'Paid' ? 'text-success bg-success/10 border-success/20' : 'text-brand bg-brand/10 border-brand/20'
-                                    )}>
-                                        {inv.status}
-                                    </span>
-                                </td>
-                                <td className="px-5 py-3.5">
-                                    <button className="text-xs text-slate-400 hover:text-brand transition-colors flex items-center gap-1">
-                                        PDF <ChevronDown className="w-3 h-3 -rotate-90" />
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
             </div>
         </div>
     );

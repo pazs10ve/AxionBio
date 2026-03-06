@@ -45,6 +45,8 @@ build_logs.txt
 build_output.txt
 
 
-.env*
-dev
 build_logs_utf8.txt
+
+.env.local
+dev
+build_failed_logs.txt

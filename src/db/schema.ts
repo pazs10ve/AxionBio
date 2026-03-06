@@ -73,6 +73,8 @@ export const jobs = pgTable('jobs', {
     status: text('status').default('queued').notNull(),
     parameters: jsonb('parameters'),              // Job-type-specific input config
     results: jsonb('results'),                  // Output file keys / summarized metrics
+    priority: integer('priority').default(0).notNull(), // 0=normal, 1=high, 2=urgent
+    maxRetries: integer('max_retries').default(3).notNull(),
     gpuHours: real('gpu_hours'),
     estimatedGpuHours: real('estimated_gpu_hours'),
     // real-time tracking
@@ -130,6 +132,21 @@ export const molecules = pgTable('molecules', {
 }, (t) => [
     index('molecules_workspace_idx').on(t.workspaceId),
     index('molecules_project_idx').on(t.projectId),
+]);
+
+// ── 7.1 Molecule Annotations ──────────────────────────────────────────────────
+
+export const moleculeAnnotations = pgTable('molecule_annotations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    moleculeId: uuid('molecule_id').notNull().references(() => molecules.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    description: text('description'),
+    color: text('color').default('#3b82f6'), // Hex color for the highlight
+    selection: text('selection'),            // Molstar selection string (e.g. "residue 45")
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+    index('mol_anno_molecule_idx').on(t.moleculeId),
 ]);
 
 // ── 8. Copilot Sessions ───────────────────────────────────────────────────────
@@ -237,6 +254,22 @@ export const labOrders = pgTable('lab_orders', {
     index('lab_orders_project_idx').on(t.projectId),
 ]);
 
+// ── 14. API Keys ─────────────────────────────────────────────────────────────
+
+export const apiKeys = pgTable('api_keys', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    keyHash: text('key_hash').notNull().unique(), // Scrypt or similar hash
+    prefix: text('prefix').notNull(),           // e.g. "ax_"
+    scopes: text('scopes').array().default(['read']), // ['read', 'write', 'admin']
+    lastUsedAt: timestamp('last_used_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+    index('api_keys_workspace_idx').on(t.workspaceId),
+]);
+
 // ── Relations ─────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -249,6 +282,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     copilotSessions: many(copilotSessions),
     notifications: many(notifications),
     labOrders: many(labOrders),
+    apiKeys: many(apiKeys),
 }));
 
 export const workspacesRelations = relations(workspaces, ({ many }) => ({
@@ -260,6 +294,7 @@ export const workspacesRelations = relations(workspaces, ({ many }) => ({
     projects: many(projects),
     copilotSessions: many(copilotSessions),
     labOrders: many(labOrders),
+    apiKeys: many(apiKeys),
 }));
 
 export const workspaceMembersRelations = relations(workspaceMembers, ({ one }) => ({
@@ -288,11 +323,17 @@ export const jobLogsRelations = relations(jobLogs, ({ one }) => ({
     job: one(jobs, { fields: [jobLogs.jobId], references: [jobs.id] }),
 }));
 
-export const moleculesRelations = relations(molecules, ({ one }) => ({
+export const moleculesRelations = relations(molecules, ({ one, many }) => ({
     workspace: one(workspaces, { fields: [molecules.workspaceId], references: [workspaces.id] }),
     project: one(projects, { fields: [molecules.projectId], references: [projects.id] }),
     sourceJob: one(jobs, { fields: [molecules.sourceJobId], references: [jobs.id] }),
     creator: one(users, { fields: [molecules.createdBy], references: [users.id] }),
+    annotations: many(moleculeAnnotations),
+}));
+
+export const moleculeAnnotationsRelations = relations(moleculeAnnotations, ({ one }) => ({
+    molecule: one(molecules, { fields: [moleculeAnnotations.moleculeId], references: [molecules.id] }),
+    user: one(users, { fields: [moleculeAnnotations.userId], references: [users.id] }),
 }));
 
 export const copilotSessionsRelations = relations(copilotSessions, ({ one, many }) => ({
@@ -318,4 +359,15 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
 export const datasetsRelations = relations(datasets, ({ one }) => ({
     workspace: one(workspaces, { fields: [datasets.workspaceId], references: [workspaces.id] }),
     uploader: one(users, { fields: [datasets.uploadedBy], references: [users.id] }),
+}));
+
+export const labOrdersRelations = relations(labOrders, ({ one }) => ({
+    workspace: one(workspaces, { fields: [labOrders.workspaceId], references: [workspaces.id] }),
+    project: one(projects, { fields: [labOrders.projectId], references: [projects.id] }),
+    orderer: one(users, { fields: [labOrders.orderedBy], references: [users.id] }),
+}));
+
+export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
+    workspace: one(workspaces, { fields: [apiKeys.workspaceId], references: [workspaces.id] }),
+    user: one(users, { fields: [apiKeys.userId], references: [users.id] }),
 }));

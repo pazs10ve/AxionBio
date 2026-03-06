@@ -1,29 +1,41 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Storage } from '@google-cloud/storage';
 
-// Cloudflare R2 is S3-compatible — same SDK, different endpoint
-export const r2 = new S3Client({
-    region: 'auto',
-    endpoint: process.env.R2_ENDPOINT ?? 'https://placeholder.r2.cloudflarestorage.com',
+// Initialize GCS client using environment variables directly
+export const storage = new Storage({
+    projectId: process.env.GCP_PROJECT_ID,
     credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID ?? 'placeholder',
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? 'placeholder',
+        client_email: process.env.GCP_CLIENT_EMAIL,
+        private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     },
 });
 
-const BUCKET = process.env.R2_BUCKET ?? 'axionbio-files';
+const BUCKET_NAME = process.env.GCS_BUCKET ?? 'axionbio-files';
+const bucket = storage.bucket(BUCKET_NAME);
 
 /**
- * Get a pre-signed URL to download a file from R2 (valid for 1 hour by default).
+ * Get a pre-signed URL to download a file from GCS (valid for 1 hour by default).
  */
-export const getSignedDownloadUrl = (key: string, expiresIn = 3600) =>
-    getSignedUrl(r2, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn });
+export const getSignedDownloadUrl = async (key: string, expiresIn = 3600) => {
+    const [url] = await bucket.file(key).getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + expiresIn * 1000,
+    });
+    return url;
+};
 
 /**
- * Get a pre-signed URL to upload a file directly from the browser to R2.
+ * Get a pre-signed URL to upload a file directly from the browser to GCS.
  */
-export const getSignedUploadUrl = (key: string, contentType: string, expiresIn = 900) =>
-    getSignedUrl(r2, new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType }), { expiresIn });
+export const getSignedUploadUrl = async (key: string, contentType: string, expiresIn = 900) => {
+    const [url] = await bucket.file(key).getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        contentType,
+        expires: Date.now() + expiresIn * 1000,
+    });
+    return url;
+};
 
 /**
  * Standard key builders — keeps the bucket organized.

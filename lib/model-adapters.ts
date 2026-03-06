@@ -7,6 +7,8 @@ export type LogLevel = 'info' | 'warning' | 'error';
 export type JobPayload = {
     jobId: string;
     type: string;
+    priority?: number;      // 0=normal, 1=high, 2=urgent
+    maxRetries?: number;
     parameters: Record<string, unknown>;
     onLog: (line: string, level?: LogLevel) => Promise<void>;
     onProgress: (pct: number, step: string) => Promise<void>;
@@ -128,7 +130,7 @@ const STUB_MOLECULES: Record<string, MoleculeResult[]> = {
 export class StubAdapter implements ModelAdapter {
     constructor(private modelType: string) { }
 
-    async run({ jobId, type, onLog, onProgress }: JobPayload): Promise<JobResult> {
+    async run({ jobId, type, onLog, onProgress, priority, maxRetries }: JobPayload): Promise<JobResult> {
         const steps = STUB_STEPS[type] ?? DEFAULT_STUB_STEPS;
         const ts = () => new Date().toISOString().slice(11, 19);
 
@@ -156,7 +158,7 @@ export abstract class GcpAdapter implements ModelAdapter {
     protected abstract machineType: string;
     protected abstract requireGpu: boolean;
 
-    async run({ jobId, parameters, onLog, onProgress }: JobPayload): Promise<JobResult> {
+    async run({ jobId, parameters, onLog, onProgress, priority, maxRetries }: JobPayload): Promise<JobResult> {
         const ts = () => new Date().toISOString().slice(11, 19);
 
         // 1. Initialize GCP Batch Client
@@ -176,18 +178,18 @@ export abstract class GcpAdapter implements ModelAdapter {
         await onLog(`[${ts()}] Preparing GCP Batch infrastructure for Job: ${jobId}`);
 
         // 2. Define the Batch Job
-        // The container receives the database credentials so the Python `client.py` 
-        // can connect back to our Neon Postgres to stream real-time logs bypassng Next.js.
         const jobDefinition: any = {
+            priority: (priority || 0) * 50, // Map 0-2 to 0-100 for GCP Batch
             taskGroups: [
                 {
                     taskCount: 1,
                     taskSpec: {
+                        maxRetryCount: maxRetries ?? 3,
                         runnables: [
                             {
                                 container: {
                                     imageUri: this.containerImage,
-                                    entrypoint: '', // Uses Dockerfile default `CMD ["python", "/app/main.py"]`
+                                    entrypoint: '',
                                 },
                             },
                         ],
@@ -198,12 +200,7 @@ export abstract class GcpAdapter implements ModelAdapter {
                         environments: {
                             DATABASE_URL: process.env.DATABASE_URL || '',
                             JOB_ID: jobId,
-                            R2_ENDPOINT: process.env.R2_ENDPOINT || '',
-                            R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID || '',
-                            R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY || '',
-                            R2_BUCKET: process.env.R2_BUCKET || '',
-                            // Optional: passing JSON stringified params if needed by the container directly
-                            // Otherwise, the container fetches them from DB using JOB_ID.
+                            GCS_BUCKET: process.env.GCS_BUCKET || '',
                         },
                     },
                 },
@@ -213,7 +210,7 @@ export abstract class GcpAdapter implements ModelAdapter {
                     {
                         policy: {
                             machineType: this.machineType,
-                            provisioningModel: 'SPOT', // Massive cost savings
+                            provisioningModel: 'SPOT',
                         },
                     },
                 ],

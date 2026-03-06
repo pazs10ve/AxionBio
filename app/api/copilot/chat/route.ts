@@ -4,11 +4,19 @@ import { db } from '@/src/db';
 import { copilotSessions, copilotMessages } from '@/src/db/schema';
 import { eq, desc, and } from 'drizzle-orm';
 import { streamText, tool } from 'ai';
-import { openai } from '@ai-sdk/openai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 
-// For this demo, we'll allow configuring the model via env
-const MODEL = process.env.COPILOT_MODEL ?? 'gpt-4o';
+const openrouter = createOpenAI({
+    apiKey: process.env.OPENROUTER_API_KEY,
+    baseURL: 'https://openrouter.ai/api/v1',
+    headers: {
+        'HTTP-Referer': 'https://axionbio.ai', // Optional but recommended for OpenRouter
+        'X-Title': 'AxionBio',
+    },
+});
+
+const MODEL = process.env.COPILOT_MODEL ?? 'anthropic/claude-3.5-sonnet';
 
 // ── GET SESSIONS ──────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
@@ -94,7 +102,7 @@ Keep your conversational responses concise.
 
         // We use Vercel AI SDK to handle tool calling and streaming natively
         const result = streamText({
-            model: openai(MODEL),
+            model: openrouter(MODEL),
             system: systemPrompt,
             messages: messages as any,
             tools: {

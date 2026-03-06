@@ -1,7 +1,7 @@
 import os
 import sys
 import json
-import boto3
+from google.cloud import storage
 import psycopg2
 from datetime import datetime
 
@@ -11,11 +11,8 @@ JOB_ID = os.environ.get("JOB_ID")
 WORKSPACE_ID = os.environ.get("WORKSPACE_ID")
 USER_ID = os.environ.get("USER_ID")
 
-# ── Cloudflare R2 Credentials ──────────────────────────────────────────────────
-R2_ENDPOINT = os.environ.get("R2_ENDPOINT")
-R2_ACCESS_KEY = os.environ.get("R2_ACCESS_KEY_ID")
-R2_SECRET_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
-R2_BUCKET = os.environ.get("R2_BUCKET")
+# ── Google Cloud Storage Credentials ───────────────────────────────────────────
+GCS_BUCKET = os.environ.get("GCS_BUCKET")
 
 def get_db():
     """Initializes the Neon Postgres connection."""
@@ -25,15 +22,10 @@ def get_db():
         print(f"Failed to connect to database: {e}")
         sys.exit(1)
 
-def get_storage_client():
-    """Initializes the S3/R2 client."""
-    return boto3.client(
-        's3',
-        endpoint_url=R2_ENDPOINT,
-        aws_access_key_id=R2_ACCESS_KEY,
-        aws_secret_access_key=R2_SECRET_KEY,
-        region_name='auto'
-    )
+def get_storage_bucket():
+    """Initializes the GCS bucket client."""
+    client = storage.Client()
+    return client.bucket(GCS_BUCKET)
 
 def log_event(conn, message, level="info"):
     """Streams a log line directly to the database so it appears instantly on the frontend."""
@@ -88,19 +80,20 @@ def mark_failed(conn, error_msg):
         print(f"Failed to mark database row as failed: {e}")
     sys.exit(1)
 
-def register_molecule(conn, r2_client, pdb_path, molecule_name, score_plddt):
-    """Uploads the inference PDB structure to R2 and registers it to the workspace."""
-    log_event(conn, f"Uploading {pdb_path} to R2 storage...")
+def register_molecule(conn, bucket, pdb_path, molecule_name, score_plddt):
+    """Uploads the inference PDB structure to GCS and registers it to the workspace."""
+    log_event(conn, f"Uploading {pdb_path} to GCS storage...")
     
     molecule_id = f"mol_{int(datetime.now().timestamp())}"
-    r2_key = f"molecules/{molecule_id}/structure.pdb"
+    gcs_key = f"molecules/{molecule_id}/structure.pdb"
     
-    # 1. R2 Upload
+    # 1. GCS Upload
     try:
-        r2_client.upload_file(pdb_path, R2_BUCKET, r2_key)
-        log_event(conn, f"Upload complete: {r2_key}")
+        blob = bucket.blob(gcs_key)
+        blob.upload_from_filename(pdb_path)
+        log_event(conn, f"Upload complete: {gcs_key}")
     except Exception as e:
-        mark_failed(conn, f"Cloudflare R2 Upload failed: {e}")
+        mark_failed(conn, f"GCS Upload failed: {e}")
 
     # 2. Extract FASTA (Simplified placeholder)
     sequence = "UNKNOWN_SEQUENCE_PARSER_TODO"
@@ -113,7 +106,7 @@ def register_molecule(conn, r2_client, pdb_path, molecule_name, score_plddt):
             cur.execute("""
                 INSERT INTO molecules (id, workspace_id, source_job_id, created_by, name, molecule_type, sequence, scores, pdb_file_key, status, created_at, updated_at)
                 VALUES (%s, %s, %s, %s, %s, 'protein', %s, %s, %s, 'candidate', NOW(), NOW())
-            """, (molecule_id, WORKSPACE_ID, JOB_ID, USER_ID, molecule_name, sequence, scores, r2_key))
+            """, (molecule_id, WORKSPACE_ID, JOB_ID, USER_ID, molecule_name, sequence, scores, gcs_key))
             
             results_json = json.dumps({"molecules": [{"id": molecule_id, "name": molecule_name}]})
             cur.execute("""

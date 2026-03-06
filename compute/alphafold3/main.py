@@ -76,13 +76,13 @@ def run_alphafold3(params, conn):
 
 if __name__ == "__main__":
     conn = get_db()
-    r2_client = get_storage_client()
+    bucket = get_storage_bucket()
     try:
         log_event(conn, "REAL AlphaFold3 container booted.", "info")
         update_progress(conn, 5, "Initializing container environment")
         params = fetch_params(conn)
         pdb_path, molecule_name, plddt = run_alphafold3(params, conn)
-        register_molecule(conn, r2_client, pdb_path, molecule_name, plddt)
+        register_molecule(conn, bucket, pdb_path, molecule_name, plddt)
     except Exception as e:
         mark_failed(conn, str(e))
     finally:

@@ -15,11 +15,11 @@ RUN pip install --no-cache-dir git+https://github.com/facebookresearch/esm.git
 RUN pip install --no-cache-dir biopython
 
 WORKDIR /app
-COPY ../shared/requirements.txt /app/shared_reqs.txt
+COPY compute/shared/requirements.txt /app/shared_reqs.txt
 RUN pip install --no-cache-dir -r /app/shared_reqs.txt
 
-COPY ../shared/client.py /app/client.py
-COPY main.py /app/main.py
+COPY compute/shared/client.py /app/client.py
+COPY compute/esmfold/main.py /app/main.py
 
 ENV DATABASE_URL=""
 ENV JOB_ID=""

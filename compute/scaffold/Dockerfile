@@ -5,12 +5,12 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install minimal database requirements
-COPY ../shared/requirements.txt /app/shared_reqs.txt
+COPY compute/shared/requirements.txt /app/shared_reqs.txt
 RUN pip install --no-cache-dir -r /app/shared_reqs.txt
 
 # Copy logic
-COPY ../shared/client.py /app/client.py
-COPY main.py /app/main.py
+COPY compute/shared/client.py /app/client.py
+COPY compute/scaffold/main.py /app/main.py
 
 # Env vars will be injected by GCP Batch at runtime
 ENV DATABASE_URL=""

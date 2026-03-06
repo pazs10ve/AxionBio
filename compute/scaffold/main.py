@@ -30,7 +30,7 @@ def run_scaffold(params, conn):
 
 if __name__ == "__main__":
     conn = get_db()
-    r2_client = get_storage_client()
+    bucket = get_storage_bucket()
     
     try:
         log_event(conn, "Scaffold container booted successfully.", "info")
@@ -39,7 +39,7 @@ if __name__ == "__main__":
         params = fetch_params(conn)
         pdb_path, molecule_name, score = run_scaffold(params, conn)
         
-        register_molecule(conn, r2_client, pdb_path, molecule_name, score)
+        register_molecule(conn, bucket, pdb_path, molecule_name, score)
         
     except Exception as e:
         mark_failed(conn, str(e))
