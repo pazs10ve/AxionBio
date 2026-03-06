@@ -5,7 +5,7 @@ import sys
 # from simtk.unit import *
 # from sys import stdout
 from client import (
-    get_db, get_storage_client, log_event, update_progress, 
+    get_db, get_storage_bucket, log_event, update_progress, 
     fetch_params, register_molecule, mark_failed
 )
 

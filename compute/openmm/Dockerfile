@@ -6,15 +6,15 @@ RUN apt-get update && apt-get install -y \
     bzip2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Miniconda for OpenMM
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh \
-    && bash miniconda.sh -b -p /opt/conda \
-    && rm miniconda.sh
+# Install Miniforge (Community-led, uses conda-forge by default, avoids Anaconda ToS issues)
+RUN wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O miniforge.sh \
+    && bash miniforge.sh -b -p /opt/conda \
+    && rm miniforge.sh
 
 ENV PATH="/opt/conda/bin:$PATH"
 
 # Install OpenMM
-RUN conda install -y -c conda-forge openmm pdbfixer mdtraj python=3.10
+RUN conda install -y openmm pdbfixer mdtraj python=3.10
 
 WORKDIR /app
 
@@ -28,9 +28,6 @@ ENV DATABASE_URL=""
 ENV JOB_ID=""
 ENV WORKSPACE_ID=""
 ENV USER_ID=""
-ENV R2_ENDPOINT=""
-ENV R2_ACCESS_KEY_ID=""
-ENV R2_SECRET_ACCESS_KEY=""
-ENV R2_BUCKET=""
+ENV GCS_BUCKET=""
 
 CMD ["python", "/app/main.py"]

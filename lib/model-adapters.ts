@@ -173,7 +173,7 @@ export abstract class GcpAdapter implements ModelAdapter {
         });
 
         const projectId = process.env.GCP_PROJECT_ID;
-        const region = process.env.GCP_REGION || 'us-central1';
+        const region = process.env.GCP_REGION || 'asia-south1';
 
         await onLog(`[${ts()}] Preparing GCP Batch infrastructure for Job: ${jobId}`);
 
@@ -191,6 +191,12 @@ export abstract class GcpAdapter implements ModelAdapter {
                                     imageUri: this.containerImage,
                                     entrypoint: '',
                                 },
+                                // Auto-install GPU drivers on the VM
+                                ...(this.requireGpu ? [{
+                                    script: {
+                                        text: "install-gpu-drivers"
+                                    }
+                                }] : [])
                             },
                         ],
                         computeResource: {
@@ -217,6 +223,10 @@ export abstract class GcpAdapter implements ModelAdapter {
                 location: {
                     allowedLocations: [`regions/${region}`],
                 },
+                // Use the dedicated service account for job permissions
+                serviceAccount: {
+                    email: process.env.GCP_CLIENT_EMAIL
+                }
             },
             logsPolicy: {
                 destination: 'CLOUD_LOGGING',

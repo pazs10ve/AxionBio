@@ -2,7 +2,7 @@ import os
 import subprocess
 import glob
 from client import (
-    get_db, get_storage_client, log_event, update_progress, 
+    get_db, get_storage_bucket, log_event, update_progress, 
     fetch_params, register_molecule, mark_failed
 )
 
