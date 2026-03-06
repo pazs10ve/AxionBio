@@ -253,7 +253,7 @@ function DetailDrawer({ mol, onClose }: { mol: Molecule; onClose: () => void }) 
                 <div className="w-full">
                     {mol.pdbFileKey && signedUrl ? (
                         <div className="h-64 rounded-xl overflow-hidden shadow-sm relative group">
-                            <MolstarViewer url={signedUrl} format="pdb" />
+                            <MolstarViewer molecules={[{ id: mol.id, url: signedUrl, label: mol.name, format: 'pdb' }]} />
                             <div className="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-xl pointer-events-none" />
 
                             {/* Optional full-screen button hook could go here */}

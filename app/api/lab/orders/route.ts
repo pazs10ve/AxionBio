@@ -27,7 +27,7 @@ export async function GET(req: Request) {
         const orders = await db.query.labOrders.findMany({
             where: eq(labOrders.workspaceId, workspaceId),
             orderBy: [desc(labOrders.createdAt)],
-            with: { orderedBy: { columns: { name: true, avatarUrl: true } } }
+            with: { orderer: { columns: { name: true, avatarUrl: true } } }
         });
 
         return NextResponse.json(orders);
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
         const newOrder = await db.insert(labOrders).values({
             workspaceId,
             projectId,
-            orderedBy: session.user.sub,
+            orderedBy: userWorkspaces[0].userId,
             title,
             vendor,
             type,
