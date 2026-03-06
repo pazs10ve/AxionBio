@@ -147,114 +147,188 @@ export class StubAdapter implements ModelAdapter {
     }
 }
 
-// ── Real adapter base (GCP Cloud Run / Vertex AI endpoint pattern) ─────────────
+import { BatchServiceClient } from '@google-cloud/batch';
+
+// ── Real adapter base (GCP Batch execution pattern) ─────────────
 
 export abstract class GcpAdapter implements ModelAdapter {
-    protected abstract endpoint: string;
-    protected abstract apiKey: string;
+    protected abstract containerImage: string;
+    protected abstract machineType: string;
+    protected abstract requireGpu: boolean;
 
     async run({ jobId, parameters, onLog, onProgress }: JobPayload): Promise<JobResult> {
         const ts = () => new Date().toISOString().slice(11, 19);
 
-        // 1. Submit job to GCP endpoint
-        const submitRes = await fetch(`${this.endpoint}/predict`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.apiKey}`,
+        // 1. Initialize GCP Batch Client
+        // It automatically picks up credentials if GOOGLE_APPLICATION_CREDENTIALS is set,
+        // or we manually instantiate it using the env variables we added.
+        const batchClient = new BatchServiceClient({
+            credentials: {
+                client_email: process.env.GCP_CLIENT_EMAIL,
+                private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
             },
-            body: JSON.stringify({ jobId, ...parameters }),
+            projectId: process.env.GCP_PROJECT_ID,
         });
 
-        if (!submitRes.ok) {
-            const err = await submitRes.text();
-            throw new Error(`GCP submit failed: ${submitRes.status} ${err}`);
+        const projectId = process.env.GCP_PROJECT_ID;
+        const region = process.env.GCP_REGION || 'us-central1';
+
+        await onLog(`[${ts()}] Preparing GCP Batch infrastructure for Job: ${jobId}`);
+
+        // 2. Define the Batch Job
+        // The container receives the database credentials so the Python `client.py` 
+        // can connect back to our Neon Postgres to stream real-time logs bypassng Next.js.
+        const jobDefinition: any = {
+            taskGroups: [
+                {
+                    taskCount: 1,
+                    taskSpec: {
+                        runnables: [
+                            {
+                                container: {
+                                    imageUri: this.containerImage,
+                                    entrypoint: '', // Uses Dockerfile default `CMD ["python", "/app/main.py"]`
+                                },
+                            },
+                        ],
+                        computeResource: {
+                            cpuMilli: 4000,
+                            memoryMib: 16384,
+                        },
+                        environments: {
+                            DATABASE_URL: process.env.DATABASE_URL || '',
+                            JOB_ID: jobId,
+                            R2_ENDPOINT: process.env.R2_ENDPOINT || '',
+                            R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID || '',
+                            R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY || '',
+                            R2_BUCKET: process.env.R2_BUCKET || '',
+                            // Optional: passing JSON stringified params if needed by the container directly
+                            // Otherwise, the container fetches them from DB using JOB_ID.
+                        },
+                    },
+                },
+            ],
+            allocationPolicy: {
+                instances: [
+                    {
+                        policy: {
+                            machineType: this.machineType,
+                            provisioningModel: 'SPOT', // Massive cost savings
+                        },
+                    },
+                ],
+                location: {
+                    allowedLocations: [`regions/${region}`],
+                },
+            },
+            logsPolicy: {
+                destination: 'CLOUD_LOGGING',
+            },
+        };
+
+        // Inject GPU if required by the model (e.g., AF3, RFdiffusion)
+        if (this.requireGpu) {
+            jobDefinition.allocationPolicy.instances[0].policy.accelerators = [
+                {
+                    type: `projects/${projectId}/locations/${region}/acceleratorTypes/nvidia-l4`,
+                    count: 1,
+                },
+            ];
+            // Batch requires setting specific boot disks for GPU drivers
+            jobDefinition.allocationPolicy.instances[0].policy.bootDisk = {
+                image: 'projects/batch-custom-image/global/images/batch-cos-gpu-113',
+            };
         }
 
-        const { inferenceId } = await submitRes.json() as { inferenceId: string };
-        await onLog(`[${ts()}] Job submitted to GCP — inferenceId: ${inferenceId}`);
+        const batchJobName = `axionbio-${jobId.slice(0, 8)}-${Date.now()}`;
 
-        // 2. Poll status endpoint
-        while (true) {
-            await sleep(3000);
-            const statusRes = await fetch(`${this.endpoint}/status/${inferenceId}`, {
-                headers: { 'Authorization': `Bearer ${this.apiKey}` },
+        // 3. Submit the Job to GCP
+        await onLog(`[${ts()}] Requesting Spot VM (${this.machineType}${this.requireGpu ? ' + 1x L4 GPU' : ''}) in ${region}...`);
+
+        try {
+            const [response] = await batchClient.createJob({
+                parent: `projects/${projectId}/locations/${region}`,
+                jobId: batchJobName,
+                job: jobDefinition,
             });
 
-            if (!statusRes.ok) continue;
+            await onLog(`[${ts()}] GCP Batch Job Scheduled. ID: ${response.uid}`);
+            await onProgress(5, 'Awaiting GCP Spot VM Allocation...');
 
-            const status = await statusRes.json() as {
-                state: 'running' | 'done' | 'failed';
-                progressPct: number;
-                currentStep: string;
-                newLogs?: { message: string; level?: LogLevel }[];
-                result?: JobResult;
-                error?: string;
+            // The Next.js API route now ENDS safely.
+            // Why? Because the Python container handles everything from here:
+            // - It boots up.
+            // - It connects to Neon and writes to `job_logs` itself.
+            // - It updates `progress_pct` on the `jobs` row itself.
+            // - It uploads the `.pdb` to Cloudflare R2 itself.
+            // - And it marks the job as `success` itself.
+            //
+            // We just return a "dummy" pending result because the DB row will be updated asynchronously.
+
+            return {
+                metadata: {
+                    gcpBatchJobId: response.uid,
+                    gcpBatchName: response.name,
+                    asyncExecutionEnabled: true
+                }
             };
 
-            for (const log of status.newLogs ?? []) {
-                await onLog(`[${ts()}] ${log.message}`, log.level);
-            }
-            await onProgress(status.progressPct, status.currentStep);
-
-            if (status.state === 'done') return status.result!;
-            if (status.state === 'failed') throw new Error(status.error ?? 'GCP job failed');
+        } catch (error: any) {
+            throw new Error(`Failed to submit GCP Batch Job: ${error.message || 'Unknown GCP Error'}`);
         }
     }
 }
 
-// Concrete GCP adapters — swap stub for real when endpoint env vars are set:
+// Concrete GCP adapters — map requested models to specific Docker containers
 class AlphaFold3Adapter extends GcpAdapter {
-    protected endpoint = process.env.GCP_AF3_ENDPOINT!;
-    protected apiKey = process.env.GCP_AF3_API_KEY!;
+    protected containerImage = process.env.GCP_IMAGE_ALPHAFOLD3 || 'placeholder-af3';
+    protected machineType = 'g2-standard-12'; // Needs L4 GPU
+    protected requireGpu = true;
 }
+
 class RFdiffusionAdapter extends GcpAdapter {
-    protected endpoint = process.env.GCP_RFD_ENDPOINT!;
-    protected apiKey = process.env.GCP_API_KEY!;
+    protected containerImage = process.env.GCP_IMAGE_RFDIFFUSION || 'placeholder-rfd';
+    protected machineType = 'g2-standard-8'; // Needs L4 GPU
+    protected requireGpu = true;
 }
-class ESM3Adapter extends GcpAdapter {
-    protected endpoint = process.env.GCP_ESM3_ENDPOINT!;
-    protected apiKey = process.env.GCP_API_KEY!;
-}
+
 class ESMFoldAdapter extends GcpAdapter {
-    protected endpoint = process.env.GCP_ESMFOLD_ENDPOINT!;
-    protected apiKey = process.env.GCP_API_KEY!;
+    protected containerImage = process.env.GCP_IMAGE_ESMFOLD || 'placeholder-esmfold';
+    protected machineType = 'g2-standard-8';
+    protected requireGpu = true;
 }
+
 class GROMACSAdapter extends GcpAdapter {
-    protected endpoint = process.env.GCP_GROMACS_ENDPOINT!;
-    protected apiKey = process.env.GCP_API_KEY!;
+    protected containerImage = process.env.GCP_IMAGE_GROMACS || 'placeholder-gromacs';
+    protected machineType = 'g2-standard-16';
+    protected requireGpu = true;
 }
+
 class OpenMMAdapter extends GcpAdapter {
-    protected endpoint = process.env.GCP_OPENMM_ENDPOINT!;
-    protected apiKey = process.env.GCP_API_KEY!;
-}
-class FEPAdapter extends GcpAdapter {
-    protected endpoint = process.env.GCP_FEP_ENDPOINT!;
-    protected apiKey = process.env.GCP_API_KEY!;
-}
-class CloudLabAdapter extends GcpAdapter {
-    protected endpoint = process.env.GCP_CRO_ENDPOINT!;
-    protected apiKey = process.env.GCP_API_KEY!;
+    protected containerImage = process.env.GCP_IMAGE_OPENMM || 'placeholder-openmm';
+    protected machineType = 'g2-standard-8';
+    protected requireGpu = true;
 }
 
 // ── Registry — checks env vars to choose real vs stub ─────────────────────────
 
-function resolve(type: string, endpoint: string | undefined, RealAdapter: new () => ModelAdapter): ModelAdapter {
-    if (endpoint) {
-        console.log(`[adapters] Using real GCP adapter for ${type}: ${endpoint}`);
+function resolve(type: string, imageEnv: string | undefined, RealAdapter: new () => ModelAdapter): ModelAdapter {
+    // If we have GCP Service Account credentials, we attempt real Batch execution
+    if (process.env.GCP_CLIENT_EMAIL && process.env.GCP_PRIVATE_KEY) {
+        console.log(`[adapters] Using real GCP Batch adapter for ${type}`);
         return new RealAdapter();
     }
-    console.log(`[adapters] Using STUB adapter for ${type} — set env var to enable real inference`);
+    console.log(`[adapters] Using STUB adapter for ${type} — missing GCP_CLIENT_EMAIL in .env.local`);
     return new StubAdapter(type);
 }
 
 export const ADAPTERS: Record<string, ModelAdapter> = {
-    alphafold3: resolve('alphafold3', process.env.GCP_AF3_ENDPOINT, AlphaFold3Adapter),
-    rfdiffusion: resolve('rfdiffusion', process.env.GCP_RFD_ENDPOINT, RFdiffusionAdapter),
-    esm3: resolve('esm3', process.env.GCP_ESM3_ENDPOINT, ESM3Adapter),
-    esmfold: resolve('esmfold', process.env.GCP_ESMFOLD_ENDPOINT, ESMFoldAdapter),
-    gromacs: resolve('gromacs', process.env.GCP_GROMACS_ENDPOINT, GROMACSAdapter),
-    openmm: resolve('openmm', process.env.GCP_OPENMM_ENDPOINT, OpenMMAdapter),
-    fep: resolve('fep', process.env.GCP_FEP_ENDPOINT, FEPAdapter),
-    cloud_lab: resolve('cloud_lab', process.env.GCP_CRO_ENDPOINT, CloudLabAdapter),
+    alphafold3: resolve('alphafold3', process.env.GCP_IMAGE_ALPHAFOLD3, AlphaFold3Adapter),
+    rfdiffusion: resolve('rfdiffusion', process.env.GCP_IMAGE_RFDIFFUSION, RFdiffusionAdapter),
+    esmfold: resolve('esmfold', process.env.GCP_IMAGE_ESMFOLD, ESMFoldAdapter),
+    gromacs: resolve('gromacs', process.env.GCP_IMAGE_GROMACS, GROMACSAdapter),
+    openmm: resolve('openmm', process.env.GCP_IMAGE_OPENMM, OpenMMAdapter),
+
+    // For cloud lab, we still just use stubs until API keys are provided
+    cloud_lab: new StubAdapter('cloud_lab'),
 };

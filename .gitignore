@@ -31,7 +31,6 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env*
 # vercel
 .vercel
 
@@ -45,5 +44,7 @@ next-env.d.ts
 build_logs.txt
 build_output.txt
 
+
+.env*
 dev
-.gitignore
+build_logs_utf8.txt

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMolecules, useUpdateMolecule, type Molecule } from '@/lib/hooks/use-molecules';
 import { cn } from '@/lib/utils';
 import {
@@ -182,6 +182,20 @@ function MoleculeRow({ mol, onSelect, selected, onStar }: { mol: Molecule; onSel
     );
 }
 
+import dynamic from 'next/dynamic';
+
+const MolstarViewer = dynamic(() => import('@/components/workbench/molstar-viewer'), {
+    ssr: false,
+    loading: () => (
+        <div className="h-64 bg-slate-50 flex items-center justify-center rounded-xl border border-slate-200">
+            <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-5 h-5 text-brand animate-spin" />
+                <span className="text-[10px] text-slate-400 font-medium">Loading 3D Engine...</span>
+            </div>
+        </div>
+    )
+});
+
 // ── Detail Drawer ────────────────────────────────────────────────────────────
 
 function DetailDrawer({ mol, onClose }: { mol: Molecule; onClose: () => void }) {
@@ -190,6 +204,29 @@ function DetailDrawer({ mol, onClose }: { mol: Molecule; onClose: () => void }) 
     const pTM = score(mol, 'pTM');
     const bindingDG = score(mol, 'bindingDG');
     const Tm = score(mol, 'Tm');
+
+    const [signedUrl, setSignedUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!mol.pdbFileKey) {
+            setSignedUrl(null);
+            return;
+        }
+
+        const fetchUrl = async () => {
+            try {
+                // Fetch a short-lived signed URL to securely download the PDB from R2
+                const res = await fetch(`/api/data/download-url?key=${encodeURIComponent(mol.pdbFileKey!)}`);
+                if (!res.ok) throw new Error("Failed to get signed URL");
+                const { url } = await res.json();
+                setSignedUrl(url);
+            } catch (error) {
+                console.error("Error fetching signed URL:", error);
+            }
+        };
+
+        fetchUrl();
+    }, [mol.pdbFileKey]);
 
     return (
         <div className="flex flex-col h-full bg-white border-l border-slate-200 overflow-hidden">
@@ -212,21 +249,27 @@ function DetailDrawer({ mol, onClose }: { mol: Molecule; onClose: () => void }) 
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                {/* 3D viewer placeholder */}
-                <div className="h-36 bg-gradient-to-b from-slate-50 to-slate-100 rounded-xl flex items-center justify-center">
-                    {mol.pdbFileKey ? (
-                        <div className="text-center">
-                            <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
-                                <div className="w-16 h-16 rounded-full border-4 border-brand/20 animate-spin" style={{ animationDuration: '12s' }} />
-                                <div className="absolute inset-3 rounded-full border-4 border-cyan-200/50 animate-spin" style={{ animationDuration: '8s', animationDirection: 'reverse' }} />
-                                <Dna className="absolute w-5 h-5 text-brand/60" />
+                {/* 3D Molstar Viewer */}
+                <div className="w-full">
+                    {mol.pdbFileKey && signedUrl ? (
+                        <div className="h-64 rounded-xl overflow-hidden shadow-sm relative group">
+                            <MolstarViewer url={signedUrl} format="pdb" />
+                            <div className="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-xl pointer-events-none" />
+
+                            {/* Optional full-screen button hook could go here */}
+                        </div>
+                    ) : mol.pdbFileKey && !signedUrl ? (
+                        <div className="h-64 bg-slate-50 flex flex-col justify-center items-center rounded-xl border border-slate-200">
+                            <div className="relative w-10 h-10 mx-auto flex items-center justify-center mb-2">
+                                <div className="w-10 h-10 rounded-full border-2 border-brand/20 animate-spin" style={{ animationDuration: '3s' }} />
+                                <Dna className="absolute w-4 h-4 text-brand/60" />
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-2">3D structure available</p>
+                            <p className="text-[10px] text-slate-400 font-medium">Fetching secure link...</p>
                         </div>
                     ) : (
-                        <div className="text-center">
-                            <Layers className="w-8 h-8 text-slate-200 mx-auto" />
-                            <p className="text-[10px] text-slate-400 mt-2">No structure computed</p>
+                        <div className="h-32 bg-slate-50 rounded-xl flex flex-col items-center justify-center border border-slate-200 border-dashed">
+                            <Layers className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                            <p className="text-[10px] text-slate-400 font-medium">No 3D structure available</p>
                         </div>
                     )}
                 </div>

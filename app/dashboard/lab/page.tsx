@@ -33,9 +33,59 @@ const ASSAY_STATUS: Record<string, string> = {
 type Tab = 'synthesis' | 'cloudlab' | 'inbox';
 
 // ── Synthesis Orders Tab ───────────────────────────────────────────────────────
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
+
+export type LabOrder = {
+    id: string;
+    title: string;
+    vendor: string;
+    status: string;
+    type: string;
+    createdAt: string;
+    orderedBy?: { name: string; avatarUrl: string | null };
+};
 
 function SynthesisTab() {
     const [showForm, setShowForm] = useState(false);
+    const [title, setTitle] = useState('Synthesis Request #1024');
+    const [provider, setProvider] = useState('Twist Bioscience');
+    const queryClient = useQueryClient();
+
+    const { data: orders = [], isLoading } = useQuery<LabOrder[]>({
+        queryKey: ['lab-orders'],
+        queryFn: async () => {
+            const res = await fetch('/api/lab/orders');
+            if (!res.ok) throw new Error('Failed to fetch orders');
+            return res.json();
+        }
+    });
+
+    const createOrder = useMutation({
+        mutationFn: async (newOrder: any) => {
+            const res = await fetch('/api/lab/orders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newOrder),
+            });
+            if (!res.ok) throw new Error('Failed to submit order');
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+            setShowForm(false);
+        }
+    });
+
+    const handlePlaceOrder = () => {
+        createOrder.mutate({
+            title,
+            vendor: provider,
+            type: 'DNA Synthesis',
+            estimatedDeliveryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+            metadata: { sequenceCount: 1, costEstimate: 240 }
+        });
+    };
 
     return (
         <div className="space-y-4">
@@ -55,18 +105,26 @@ function SynthesisTab() {
                     <h3 className="text-sm font-semibold text-slate-800">Configure Synthesis Order</h3>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Select Molecule</label>
-                            <select className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                                <option>ABL1-Binder-Rank1</option>
-                                <option>ABL1-Binder-Rank2</option>
-                                <option>CompactCas-Variant-7</option>
-                            </select>
+                            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Request Title</label>
+                            <input
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"
+                                placeholder="e.g. ABL1 Variants Batch 4"
+                            />
                         </div>
                         <div>
                             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Provider</label>
                             <div className="flex gap-2">
-                                {['Twist', 'IDT', 'Ginkgo'].map(p => (
-                                    <button key={p} className="flex-1 py-2 text-xs font-semibold border border-slate-200 rounded-lg hover:border-brand/30 hover:text-brand hover:bg-brand/5 text-slate-600 bg-white transition-colors">
+                                {['Twist Bioscience', 'IDT', 'Ginkgo'].map(p => (
+                                    <button
+                                        key={p}
+                                        onClick={() => setProvider(p)}
+                                        className={cn(
+                                            "flex-1 py-2 text-xs font-semibold border rounded-lg transition-colors",
+                                            provider === p ? "border-brand bg-brand/10 text-brand" : "border-slate-200 hover:border-brand/30 hover:text-brand hover:bg-brand/5 text-slate-600 bg-white"
+                                        )}
+                                    >
                                         {p}
                                     </button>
                                 ))}
@@ -75,8 +133,8 @@ function SynthesisTab() {
                     </div>
                     <div className="bg-white rounded-xl p-4 border border-slate-200">
                         <div className="flex justify-between text-xs mb-2">
-                            <span className="text-slate-500">Sequence length</span>
-                            <span className="font-mono font-semibold text-slate-700">28 aa</span>
+                            <span className="text-slate-500">Sequence type</span>
+                            <span className="font-mono font-semibold text-slate-700">DNA</span>
                         </div>
                         <div className="flex justify-between text-xs mb-2">
                             <span className="text-slate-500">Estimated cost</span>
@@ -88,8 +146,12 @@ function SynthesisTab() {
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <Button className="bg-brand hover:bg-brand-hover text-white flex-1 h-9 text-sm">
-                            Place Order
+                        <Button
+                            disabled={createOrder.isPending}
+                            onClick={handlePlaceOrder}
+                            className="bg-brand hover:bg-brand-hover text-white flex-1 h-9 text-sm"
+                        >
+                            {createOrder.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Place Order'}
                         </Button>
                         <Button variant="outline" onClick={() => setShowForm(false)} className="h-9 text-sm border-slate-200">
                             <X className="w-4 h-4" />
@@ -103,29 +165,44 @@ function SynthesisTab() {
                 <table className="w-full text-sm">
                     <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
                         <tr>
-                            <th className="px-5 py-3 text-left">Molecule</th>
+                            <th className="px-5 py-3 text-left">Request</th>
                             <th className="px-5 py-3 text-left">Provider</th>
                             <th className="px-5 py-3 text-left">Status</th>
-                            <th className="px-5 py-3 text-left">Sequences</th>
-                            <th className="px-5 py-3 text-left">Ordered</th>
+                            <th className="px-5 py-3 text-left">Added By</th>
+                            <th className="px-5 py-3 text-left">Ordered On</th>
                             <th className="px-5 py-3 text-left"></th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                        {MOCK_SYNTHESIS_ORDERS.map((o) => {
-                            const s = ORDER_STATUS[o.status];
+                        {isLoading ? (
+                            <tr>
+                                <td colSpan={6} className="py-10 text-center text-slate-400">
+                                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                                    Loading orders...
+                                </td>
+                            </tr>
+                        ) : orders.length === 0 ? (
+                            <tr>
+                                <td colSpan={6} className="py-10 text-center text-slate-500 text-xs">
+                                    No lab synthesis orders yet.
+                                </td>
+                            </tr>
+                        ) : orders.map((o) => {
+                            const s = ORDER_STATUS[o.status] || { label: o.status, icon: Clock, cls: 'text-slate-500 bg-slate-100 border-slate-200' };
                             const Icon = s.icon;
                             return (
                                 <tr key={o.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="px-5 py-4 font-semibold text-slate-800">{o.name}</td>
-                                    <td className="px-5 py-4 text-slate-600">{o.provider}</td>
+                                    <td className="px-5 py-4 font-semibold text-slate-800">{o.title}</td>
+                                    <td className="px-5 py-4 text-slate-600">{o.vendor}</td>
                                     <td className="px-5 py-4">
-                                        <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border', s.cls)}>
+                                        <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border capitalize', s.cls)}>
                                             <Icon className="w-3 h-3" />{s.label}
                                         </span>
                                     </td>
-                                    <td className="px-5 py-4 text-slate-600 font-mono">{o.sequences}</td>
-                                    <td className="px-5 py-4 text-slate-500">{o.ordered}</td>
+                                    <td className="px-5 py-4 text-slate-600">
+                                        {o.orderedBy?.name || 'System'}
+                                    </td>
+                                    <td className="px-5 py-4 text-slate-500">{new Date(o.createdAt).toLocaleDateString()}</td>
                                     <td className="px-5 py-4">
                                         <ChevronRight className="w-4 h-4 text-slate-300" />
                                     </td>

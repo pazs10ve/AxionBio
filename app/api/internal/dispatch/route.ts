@@ -47,6 +47,18 @@ export async function POST(req: Request) {
             onProgress: updateProgress,
         });
 
+        const meta = result.metadata as Record<string, unknown> | undefined;
+
+        // If the adapter scheduled the job asynchronously (GCP Batch), 
+        // the python cloud container will handle updating the database to success,
+        // writing the results, and creating the molecules.
+        if (meta?.asyncExecutionEnabled) {
+            await writeLog(`[INFO] Async cluster execution delegated to GCP Batch (Job: ${meta.gcpBatchName}). Awaiting telemetry stream...`);
+            return NextResponse.json({ ok: true, async: true, gcpBatchId: meta.gcpBatchJobId });
+        }
+
+        // ── SYNC EXECUTION ONLY (Stub fallback) ── 
+
         // Save results to job row
         await db.update(jobs).set({
             status: 'success',
@@ -85,7 +97,7 @@ export async function POST(req: Request) {
             metadata: {
                 jobType: body.type,
                 moleculesCount: result.molecules?.length ?? 0,
-                stubMode: (result.metadata as Record<string, unknown>)?.stubMode ?? false,
+                stubMode: meta?.stubMode ?? false,
             },
         });
 

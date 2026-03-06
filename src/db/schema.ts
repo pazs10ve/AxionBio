@@ -216,6 +216,27 @@ export const notifications = pgTable('notifications', {
     index('notifications_read_idx').on(t.read),
 ]);
 
+// ── 13. Lab Orders ─────────────────────────────────────────────────────────────
+
+export const labOrders = pgTable('lab_orders', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    orderedBy: uuid('ordered_by').notNull().references(() => users.id),
+    title: text('title').notNull(),
+    vendor: text('vendor').notNull(),          // e.g. 'Twist Bioscience', 'Charles River'
+    type: text('type').notNull(),              // 'DNA Synthesis', 'Protein Expression', 'Binding Assay'
+    status: text('status').default('draft').notNull(), // 'draft', 'submitted', 'in_progress', 'shipped', 'completed', 'cancelled'
+    trackingId: text('tracking_id'),
+    metadata: jsonb('metadata'),               // e.g. sequence data, specs, custom instructions
+    estimatedDeliveryDate: timestamp('estimated_delivery_date'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [
+    index('lab_orders_workspace_idx').on(t.workspaceId),
+    index('lab_orders_project_idx').on(t.projectId),
+]);
+
 // ── Relations ─────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -227,6 +248,7 @@ export const usersRelations = relations(users, ({ many }) => ({
     projects: many(projects),
     copilotSessions: many(copilotSessions),
     notifications: many(notifications),
+    labOrders: many(labOrders),
 }));
 
 export const workspacesRelations = relations(workspaces, ({ many }) => ({
@@ -237,6 +259,7 @@ export const workspacesRelations = relations(workspaces, ({ many }) => ({
     activities: many(activityLogs),
     projects: many(projects),
     copilotSessions: many(copilotSessions),
+    labOrders: many(labOrders),
 }));
 
 export const workspaceMembersRelations = relations(workspaceMembers, ({ one }) => ({
@@ -250,6 +273,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     jobs: many(jobs),
     molecules: many(molecules),
     copilotSessions: many(copilotSessions),
+    labOrders: many(labOrders),
 }));
 
 export const jobsRelations = relations(jobs, ({ one, many }) => ({
