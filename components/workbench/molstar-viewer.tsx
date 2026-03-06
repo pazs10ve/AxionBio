@@ -75,9 +75,10 @@ export default function MolstarViewer({
                 // If multiple molecules, try to align them
                 if (structures.length > 1) {
                     // Use superposition manager for alignment
-                    await pluginInstance.managers.structure.hierarchy.toggleVisibility(structures.map(s => s.cell), true);
+                    const currentRefs = pluginInstance.managers.structure.hierarchy.current.structures;
+                    pluginInstance.managers.structure.hierarchy.toggleVisibility(currentRefs, 'show');
                     // @ts-ignore
-                    await pluginInstance.managers.structure.hierarchy.alignStructures?.(structures.map(s => s.cell));
+                    pluginInstance.managers.structure.hierarchy.alignStructures?.(currentRefs);
                 }
 
                 pluginInstance.managers.camera.reset();
@@ -109,7 +110,7 @@ export default function MolstarViewer({
         const hierarchy = plugin.managers.structure.hierarchy.current;
         const idx = molecules.findIndex(m => m.id === id);
         if (idx !== -1 && hierarchy.structures[idx]) {
-            plugin.managers.structure.hierarchy.toggleVisibility([hierarchy.structures[idx].cell], newVisible);
+            plugin.managers.structure.hierarchy.toggleVisibility([hierarchy.structures[idx]], newVisible ? 'show' : 'hide');
         }
     };
 
