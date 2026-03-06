@@ -163,7 +163,7 @@ export function LandingNav({ user }: { user?: any }) {
                         {user ? (
                             <>
                                 <Link
-                                    href="/api/auth/logout"
+                                    href="/auth/logout"
                                     className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-2 rounded-md hover:bg-slate-100/70"
                                 >
                                     Sign Out
@@ -178,13 +178,13 @@ export function LandingNav({ user }: { user?: any }) {
                         ) : (
                             <>
                                 <Link
-                                    href="/api/auth/login?returnTo=/dashboard"
+                                    href="/auth/login?returnTo=/dashboard"
                                     className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-2 rounded-md hover:bg-slate-100/70"
                                 >
                                     Sign In
                                 </Link>
                                 <Link
-                                    href="/api/auth/login?screen_hint=signup&returnTo=/dashboard"
+                                    href="/auth/login?screen_hint=signup&returnTo=/dashboard"
                                     id="nav-signup"
                                     className="inline-flex items-center justify-center rounded-lg border border-brand px-4 py-2 text-sm font-semibold text-brand hover:bg-brand-light transition-colors"
                                 >
@@ -329,7 +329,7 @@ export function LandingNav({ user }: { user?: any }) {
                                     Dashboard
                                 </Link>
                                 <Link
-                                    href="/api/auth/logout"
+                                    href="/auth/logout"
                                     className="block w-full rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                                     onClick={() => setMobileOpen(false)}
                                 >
@@ -339,14 +339,14 @@ export function LandingNav({ user }: { user?: any }) {
                         ) : (
                             <>
                                 <Link
-                                    href="/api/auth/login?returnTo=/dashboard"
+                                    href="/auth/login?returnTo=/dashboard"
                                     className="block w-full rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                                     onClick={() => setMobileOpen(false)}
                                 >
                                     Sign In
                                 </Link>
                                 <Link
-                                    href="/api/auth/login?screen_hint=signup&returnTo=/dashboard"
+                                    href="/auth/login?screen_hint=signup&returnTo=/dashboard"
                                     className="block w-full rounded-lg border border-brand px-4 py-2.5 text-center text-sm font-semibold text-brand hover:bg-brand-light transition-colors"
                                     onClick={() => setMobileOpen(false)}
                                 >

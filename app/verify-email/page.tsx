@@ -7,7 +7,7 @@ export default async function VerifyEmailPage() {
     const session = await auth0.getSession();
 
     if (!session) {
-        redirect('/api/auth/login');
+        redirect('/auth/login');
     }
 
     if (session.user.email_verified) {
@@ -35,7 +35,7 @@ export default async function VerifyEmailPage() {
                         If you have verified your email, click the button below to refresh your session.
                     </p>
                     <Link
-                        href="/api/auth/login?returnTo=/dashboard"
+                        href="/auth/login?returnTo=/dashboard"
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-hover transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                     >
                         I've verified my email
@@ -45,7 +45,7 @@ export default async function VerifyEmailPage() {
 
                 <div className="pt-6 border-t border-slate-100 flex flex-col space-y-3">
                     <Link
-                        href="/api/auth/logout"
+                        href="/auth/logout"
                         className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
                     >
                         Sign out and try another account

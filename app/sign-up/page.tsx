@@ -123,7 +123,7 @@ export default function SignUpPage() {
                         </div>
 
                         <Link
-                            href="/api/auth/login?screen_hint=signup&returnTo=/dashboard"
+                            href="/auth/login?screen_hint=signup&returnTo=/dashboard"
                             id="signup-submit"
                             className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-brand-hover transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                         >
@@ -142,7 +142,7 @@ export default function SignUpPage() {
 
                 <p className="mt-6 text-center text-sm text-slate-500">
                     Already have an account?{' '}
-                    <Link href="/api/auth/login?returnTo=/dashboard" className="font-semibold text-brand hover:underline">
+                    <Link href="/auth/login?returnTo=/dashboard" className="font-semibold text-brand hover:underline">
                         Sign in
                     </Link>
                 </p>
